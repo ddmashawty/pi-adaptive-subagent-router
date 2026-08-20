@@ -54,3 +54,5 @@
 - [x] 补充 low/medium/high/critical reviewer 路由回归与离线 adaptive-vs-static 基准。
 - [x] 运行 20 项全量测试、源文件 strip-types 检查、benchmark CLI 和 Pi 加载 smoke test。
 - [x] 只读 reviewer 复核：无 blocker/major；修正 system prompt 文案遗漏和 reviewer 风险覆盖缺口；reviewer 无 shell 权限，最终 gate 由父会话执行。
+- [x] 新 Pi 进程 live route smoke：balanced low-risk reviewer 保留父 `max`，显式 economy reviewer 降为同模型 `minimal`；仅验证 route，不推断质量/实际成本。
+- [!] 一次固定 JSON live smoke 与 acceptance-report 契约冲突并 detached；已记录为后续 live A/B harness 的输出契约风险。

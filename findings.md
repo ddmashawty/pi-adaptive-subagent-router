@@ -42,3 +42,5 @@
 - 建议验收：质量不下降，且成本或延迟至少下降 15%；任何 reviewer 质量或 writer 安全回归都判失败。
 - 审查发现并已修正：`index.ts` 的注入提示曾遗漏 low-risk reviewer；离线 fixture 曾只覆盖 low/medium reviewer，现已补齐 high/critical。
 - 调试记录：首次 benchmark 断言把非 economy reviewer 数量误写为 3，实际 fixture 当时只有 2；依据测试输出确认是断言/fixture 不一致，随后扩展 fixture 到四种 reviewer 风险并更新期望值。
+- 新 Pi 进程 live route smoke：low-risk `balanced` reviewer 实际路由到父 `openai-codex/gpt-5.6-luna:max`（`same-model`，reason 为 reviewer quality priority）；显式 `economy` reviewer 实际降到同模型 `:minimal`（`same-model-lower-thinking`）。这只证明路由选择，不证明质量或实际节省。
+- 一次要求 child 只返回固定 JSON 的 live smoke 与 pi-subagents acceptance-report 契约冲突，child 请求 supervisor 后 detached；后续 live harness 应让任务输出契约与 acceptance 契约一致。
