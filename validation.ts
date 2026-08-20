@@ -9,6 +9,11 @@ export type ValidationLane = {
 	cwd?: string;
 };
 
+export function assertReadOnlyRollout(lanes: Pick<ValidationLane, "key" | "role">[]): void {
+	const writer = lanes.find((lane) => lane.role === "write");
+	if (writer) throw new Error(`Writer lane "${writer.key}" is disabled during the read-only rollout; authority enforcement must be remediated before enabling writes.`);
+}
+
 export function validateLaneIsolation(lanes: ValidationLane[], defaultCwd: string, calibrationSample: boolean): void {
 	const laneKeys = lanes.map((lane) => lane.key);
 	if (laneKeys.some((key) => key === "adaptive-escalation" || key === "adaptive-calibration")) {

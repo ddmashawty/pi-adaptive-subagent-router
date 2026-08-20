@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateLaneIsolation, type ValidationLane } from "./validation.ts";
+import { assertReadOnlyRollout, validateLaneIsolation, type ValidationLane } from "./validation.ts";
 
 const reader: ValidationLane = { key: "reader", role: "read", output: false };
 const writer = (key: string, authority?: string[], worktree = false): ValidationLane => ({
@@ -40,6 +40,11 @@ test("rejects unsafe concurrency, duplicate identity/output, and writer calibrat
 		{ ...reader, key: "b", output: "same.md" },
 	], "/project", false), /output path must be unique/i);
 	assert.throws(() => validateLaneIsolation([writer("one", ["src/one"])], "/project", true), /read-only/);
+});
+
+test("read-only rollout rejects every writer lane", () => {
+	assert.throws(() => assertReadOnlyRollout([reader, writer("one", ["src/one"])]), /read-only rollout/i);
+	assert.doesNotThrow(() => assertReadOnlyRollout([reader]));
 });
 
 test("rejects reserved internal lane keys", () => {

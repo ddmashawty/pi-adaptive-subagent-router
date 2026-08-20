@@ -2,6 +2,8 @@
 
 A global Pi extension that routes subagent work by **risk, quality policy, lane duty, evidence requirements, cost, context size, and writer isolation** without embedding any provider or model ID.
 
+> **Current rollout:** globally enabled for **read-only lanes only**. Writer lanes fail closed until writer-start-baseline authority enforcement is implemented and verified. This does not affect normal Pi work that does not delegate.
+
 ## Routing policy
 
 The router reads the active parent runtime and current model catalogue on every turn. It never crosses providers automatically.

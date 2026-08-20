@@ -15,7 +15,8 @@
 - [complete] 9. 调查并修复带 gate 的父模型 provider/cache 兼容性残余风险。
 - [complete] 10. 将 balanced reviewer 统一固定在父模型与当前思考级别，补充低风险 reviewer 回归。
 - [complete] 11. 增加可重复的 adaptive-vs-static 离线路由基准与结果判定工具，先验证策略差异再决定是否进行 live A/B。
-- [in_progress] 12. 已完成首轮完整路径 live A/B（review/scout 各 3 个 paired tasks）；继续扩充到至少 20 个 paired tasks/repetitions，并记录实际 token、成本、延迟、质量和安全事件。
+- [complete] 12. 首轮完整路径 live A/B 支持有限结论；按用户决策不做部署前 20+ 样本扩展，改为全局只读灰度并在真实使用中收集实际成本、延迟、质量和安全事件。
+- [in_progress] 13. writer authority 使用当前 HEAD 而非 writer-start baseline，且遗漏 ignored untracked；writer lane 已 fail-closed，待单独设计、修复并验证后再开放。
 
 ## 决策
 - 使用 `~/.pi/agent/extensions/adaptive-subagent-router/`，因此自动作用于所有项目。
@@ -23,7 +24,7 @@
 - 优先在同 provider 内选择成本低于父模型的 reasoning 模型；没有合格候选时不跨 provider。
 - 无低成本候选时，先在父模型上选择低于当前值的思考强度；若父模型已无法降档，则复用父模型和当前思考强度，避免无谓拒绝委派。
 - 对不同模型仍依据目标模型支持的 level 映射选择；正常降级路径保持低于主 agent，最终同模型兜底是显式例外。
-- 同一 worktree 默认单 writer；多个 writer 仅在显式 worktree 隔离时允许。
+- 当前仅开放 read-only lane；writer lane 一律拒绝，直到 authority gate 的 writer-start baseline 与 ignored-untracked 缺口修复并验证。
 - 默认质量策略为 balanced：低风险 scout/research 可经济路由；所有 reviewer、高/关键风险和中风险 writer 保留父模型；economy 才允许 reviewer 降级。
 - strict 明确复用父模型当前思考级别；economy 保持既有成本优先行为。
 - blocker 必须有命令/gate 或精确代码证据；高风险 reviewer 可强制 gate，避免静态猜测被包装成已验证结论。

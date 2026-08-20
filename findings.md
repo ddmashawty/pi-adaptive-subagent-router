@@ -53,3 +53,11 @@
 - 独立 quality scorer 读取 12 个 output/meta，确认所有 child `exitCode=0`、acceptance attested、无文件修改；结论为首轮质量通过，但样本不足以给出最终统计保证。
 - 新发现的安全残余：`workflow.ts:18` 使用当前 HEAD 而非 writer-start baseline，且 `--exclude-standard` 忽略 ignored untracked；需单独修复/验证，不能把当前 writer isolation 宣称为已完全验证。
 - 详细报告：`live-ab-report.md`。完整评测仍需至少 20 个 paired tasks/repetitions 和置信区间。
+
+## 只读灰度结论（本轮）
+
+- 用户决定不为部署前结论扩充到 20+ paired tasks/repetitions；采用真实使用中的持续观测替代。
+- 两项独立只读审查一致认为：只读低风险 scout 可小范围上线；首轮 3 对 exact-fact scout 两边 rubric 均为 3/3，balanced 相对 strict 的 token/cost/wall 分别为 -20.16%/-30.85%/-46.83%。这只支持该任务类，不能外推为总体质量保证。
+- reviewer 的 balanced 路由保留父模型/思考级别已有路由与基准回归覆盖；首轮 review 没有成本/时延收益主张。
+- `workflow.ts:18` 的 authority gate 对当前 HEAD 比较，out-of-authority 文件若由 child commit 则不可见；`--exclude-standard` 也遗漏 ignored untracked。为防止将声明性隔离误作安全边界，发布期 writer lane 已在 `validation.ts` fail-closed；该限制必须保留至独立修复和验证完成。
+- 使用期最小观测字段：任务类/风险/role-duty/qualityPolicy、父与最终 route、token/实际成本/时延、完成/失败原因、rubric 或人工质量判断、confidence/needsEscalation、gate/authority 事件与是否有文件变更。

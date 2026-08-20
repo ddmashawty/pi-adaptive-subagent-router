@@ -13,7 +13,7 @@ import {
 	type RuntimeModel,
 	type ThinkingLevel,
 } from "./routing.ts";
-import { validateLaneIsolation } from "./validation.ts";
+import { assertReadOnlyRollout, validateLaneIsolation } from "./validation.ts";
 import { stripSubagentPromptCacheFields } from "./cacheCompatibility.ts";
 import { buildWorkflow } from "./workflow.ts";
 
@@ -123,6 +123,7 @@ export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
 			if (params.lanes.length > LANE_LIMIT[params.complexity]) {
 				throw new Error(`${params.complexity} work permits at most ${LANE_LIMIT[params.complexity]} lane(s); split the work into serial phases instead.`);
 			}
+			assertReadOnlyRollout(params.lanes);
 			validateLaneIsolation(params.lanes, ctx.cwd, params.calibrationSample ?? false);
 
 			const defaultRisk = (params.risk ?? "medium") as Risk;

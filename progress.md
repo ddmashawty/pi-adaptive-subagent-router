@@ -59,3 +59,11 @@
 - [x] 首轮完整路径 live A/B：review balanced/strict 各 3 个 reviewer tasks，scout balanced/strict 各 3 个 scout tasks；记录 route、child token/cost、workflow/child latency、artifact completion 和 rubric 质量。
 - [x] 首轮结果：scout balanced 路由 `max→medium`，相对 strict token -20.16%、cost -30.85%、workflow wall -46.83%，两边质量 rubric 均 3/3；review 两边均保留 `max`，质量 rubric 均 3/3，但 balanced isolation 发现 strict 漏掉的 HEAD/commit gate bypass。
 - [!] live review 暴露 writer authority 残余 blocker：当前 HEAD 基线与 ignored untracked 文件可能绕过 gate；详见 `live-ab-report.md`，不在本轮 read-only A/B 中修复。
+
+## 2026-08-20 只读灰度上线
+
+- [x] 按用户决定，停止部署前 20+ paired tasks/repetitions 扩展；以小样本的窄结论和使用期遥测决定后续优化。
+- [x] 重新执行 20 项纯函数/工作流回归、strip-types 语法检查与 `pi --list-models` auto-discovery smoke；全部通过。
+- [x] 两条独立 reviewer 审查确认：低风险 read-only scout 可窄范围上线；reviewer balanced 的父模型保护与当前实验结论一致。
+- [x] 为已验证的 writer authority bypass 增加 fail-closed 发布护栏：任何 `role=write` lane 被拒绝。新增回归覆盖该护栏。
+- [!] writer lane 不属于本次上线范围；需在 writer-start baseline/ignored-untracked authority 修复并独立验证后才可开放。
