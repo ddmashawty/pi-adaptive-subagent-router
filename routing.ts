@@ -122,22 +122,15 @@ export function selectRoute(
 	const candidates = lowerCostCandidates(parent, models, request.minContextWindow);
 	if (request.duty === "oracle" || request.duty === "worker") {
 		if (parent.contextWindow < request.minContextWindow) return undefined;
-		const highThinking = thinkingRank(parentThinking) >= thinkingRank("high")
-			? parentThinking
-			: supportsThinking(parent, "high") ? "high" : parentThinking;
 		const isOracle = request.duty === "oracle";
 		return {
 			model: parent,
-			thinking: highThinking,
+			thinking: parentThinking,
 			strategy: "same-model",
 			reason: [
 				isOracle ? "oracle decision-consistency priority" : "worker implementation safety priority",
 				isOracle ? "preserve parent model for inherited-context consultation" : "preserve parent model for managed-worktree implementation",
-				highThinking === "high" && parentThinking !== "high"
-					? `raise ${request.duty} thinking to high`
-					: highThinking === parentThinking && thinkingRank(parentThinking) < thinkingRank("high")
-						? "high thinking unsupported; preserve parent thinking"
-						: `preserve parent thinking ${parentThinking}`,
+				`preserve parent thinking ${parentThinking}; subagents never exceed the parent thinking level`,
 			],
 			eligibleLowerCost: candidates.length,
 		};

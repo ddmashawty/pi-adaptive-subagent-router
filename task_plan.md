@@ -1,43 +1,30 @@
-# Adaptive Agent 顺序实施计划
+# Adaptive Router 当前计划：全局 Thinking 上限
 
-## 已完成：Oracle
-
-Oracle 策略已在 commit `1f138ee` 完成；12 项测试和真实运行通过。
-
----
-
-# 当前唯一计划：Worker 自适应策略
+## 背景
+Oracle 已在 `1f138ee` 完成，Worker 已在 `34d78ae` 完成。当前只处理用户确认的新约束，不规划 Delegate。
 
 ## 目标
-仅实现一个安全、可验证的 adaptive Worker：单 writer、强制 pi-subagents managed worktree、必须提供 host gate，最终由父 agent 接收 patch/handoff；完成前不规划或实现 Delegate。
+保留现有模型选择策略，但任何 subagent 的 thinking 不得高于父模型。Oracle 与 Worker 继续保留父模型，并改为严格继承父 thinking，不再自动提升到 `high`。
 
 ## 成功标准
-- `agent: worker` 自动推断为 worker duty，其他 agent 不能冒充或绕过。
-- Worker 始终保留父模型并优先 high thinking，默认 fork。
-- 每个 adaptive workflow 最多一个 Worker；Worker 必须 `worktree:true` 且必须提供 gate。
-- Worker 使用写入质量契约，不再收到 read-only 指令。
-- 真实 Worker 在 managed worktree 修改测试文件，gate 通过，父 checkout 不被修改。
-- 结果保留可定位的 patch/handoff artifact。
-- 既有 Oracle/scout/research/reviewer 测试无回归。
+- Oracle/Worker 在 economy、balanced、strict 下均使用父模型和父 thinking。
+- scout/reviewer/research 的经济路由仍可降低模型或 thinking，但绝不超过父 thinking。
+- 对所有 duty 和 policy 有统一 thinking ceiling 回归测试。
+- 系统提示、英中 README 与行为一致。
+- 单测、语法检查、真实 Pi smoke、独立 review 全部通过。
 
 ## 阶段
-- [complete] 1. 核对当前 pi-subagents worktree result/handoff 与 gate 契约
-- [complete] 2. 编写 Worker 路由、校验、workflow 失败测试
-- [complete] 3. 实现最小 Worker duty、单写者和 managed-worktree 策略
-- [complete] 4. 运行单元测试、语法检查与既有回归
-- [complete] 5. 真实启动 Worker，验证 worktree 写入、gate、父 checkout 不变和 patch/handoff
-- [complete] 6. 独立 reviewer 审查，修复发现并提交原子 commit
-- [pending] 7. Worker 完成后再创建 Delegate 独立计划
-
-## 范围约束
-- 不修改 `pi-subagents`，除非阶段 1 证明公开契约不足并先向用户说明。
-- 不恢复旧的路径级 authority/baseline verifier。
-- Worker 的 authority 是其整个 managed worktree；父 agent 决定是否应用 patch。
-- 不支持共享 cwd Worker、非 Git Worker、多 Writer 或自动应用 patch。
-- 不实现 Delegate。
-- 不改变 provider 不跨越原则。
+- [complete] 1. 添加 thinking ceiling 失败测试
+- [complete] 2. 实现最小路由修改并同步文档
+- [complete] 3. 运行完整单测与静态检查
+- [complete] 4. 真实运行 Oracle/Worker 验证父 thinking 不被提升
+- [complete] 5. 独立 reviewer 审查并提交原子 commit
 
 ## 遇到的错误
-| 错误 | 次数 | 处理 |
-|---|---:|---|
-| 项目规划文件不存在 | 1 | 在 adaptive 项目根目录重新创建 |
+- 首次双 lane smoke 使用 `complexity=simple`，被 lane limit 在 spawn 前拒绝；父 checkout 保持 clean。改为 `standard` 后通过。
+
+## 范围约束
+- 不改变同 provider、成本和风险路由策略。
+- 不修改 pi-subagents。
+- 不实现 Delegate 或其他新 agent。
+- 不允许任何 subagent thinking 高于父 thinking。

@@ -16,7 +16,7 @@ Adaptive Subagent Router 是一个面向 [Pi](https://github.com/badlogic/pi-mon
 - 支持 `balanced`、`economy`、`strict` 三种质量策略。
 - 没有合适低成本模型时，自动降低思考级别作为 fallback。
 - balanced 下保护 reviewer 以及 high/critical 风险任务的父运行时。
-- Oracle 始终保留父模型、优先使用 high thinking，并默认使用 fork 上下文。
+- Oracle 始终保留父模型和父 thinking，并默认使用 fork 上下文。
 - 单 Worker 路由强制 managed worktree 和 host gate，并保留 patch/handoff 工件。
 - 要求子 agent 报告置信度和 `needsEscalation`。
 - 可选地由父运行时复核低置信度结果。
@@ -32,18 +32,19 @@ Adaptive Subagent Router 是一个面向 [Pi](https://github.com/badlogic/pi-mon
 
 - 低风险 `scout` 和 `research` lane 可以使用同 provider 的低成本 reasoning 模型；
 - reviewer 保留父模型和当前思考级别；
-- Oracle 保留父模型、优先使用 high thinking，并默认使用 fork 上下文；
-- Worker 保留父模型、优先使用 high thinking、默认使用 fork，并要求 `worktree:true` 和 gate；
+- 任何 subagent 的 thinking 都不得高于父模型；
+- Oracle 保留父模型和父 thinking，并默认使用 fork 上下文；
+- Worker 保留父模型和父 thinking、默认使用 fork，并要求 `worktree:true` 和 gate；
 - high/critical 风险任务保留父运行时；
 - medium-risk 经济路由优先选择较接近的低成本候选，而不是盲目选择最便宜的模型。
 
 ### `economy`
 
-显式成本优先。经济型职责（包括 reviewer）可以使用低成本同 provider 模型；Oracle 和 Worker 是例外，两者都保留父模型并优先使用 high thinking。经济型职责没有合适候选时，先降低父模型思考级别，最后回退到父运行时。
+显式成本优先。经济型职责（包括 reviewer）可以使用低成本同 provider 模型，但 thinking 仍低于父模型；Oracle 和 Worker 是模型降级的例外，两者都保留父模型和完全相同的父 thinking。经济型职责没有合适候选时，先降低父模型思考级别，最后回退到父运行时。
 
 ### `strict`
 
-保留父模型和当前思考级别；Oracle 和 Worker 可提升至 high thinking，以满足各自角色契约。适合发布、安全、不可逆操作或明确要求最高质量的任务。
+保留父模型和当前思考级别。任何角色（包括 Oracle 和 Worker）都不得将 thinking 提升至父模型之上。适合发布、安全、不可逆操作或明确要求最高质量的任务。
 
 模型公开成本只是保守代理，不代表模型能力、质量或最终实际花费。
 

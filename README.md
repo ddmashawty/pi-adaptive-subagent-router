@@ -16,7 +16,7 @@ This extension is currently in developer preview. Routing policy and log formats
 - Three quality policies: `balanced`, `economy`, and `strict`.
 - Lower thinking-level fallback when no eligible lower-cost model exists.
 - Parent-runtime protection for balanced reviewers and high/critical-risk work.
-- Oracle routing that always preserves the parent model, prefers high thinking, and defaults to fork context.
+- Oracle routing that always preserves the parent model and thinking level, and defaults to fork context.
 - Single-worker routing that requires managed worktree isolation and a host-run gate, while preserving patch/handoff artifacts.
 - Evidence contracts requiring confidence and `needsEscalation` reporting.
 - Optional parent-runtime escalation for low-confidence results.
@@ -32,18 +32,19 @@ This extension is currently in developer preview. Routing policy and log formats
 
 - Low-risk `scout` and `research` lanes may use a lower-cost same-provider reasoning model.
 - Reviewers preserve the parent model and current thinking level.
-- Oracle preserves the parent model, prefers high thinking, and defaults to fork context.
-- Worker preserves the parent model, prefers high thinking, defaults to fork context, and requires `worktree:true` plus a gate.
+- No subagent may use a thinking level above the parent.
+- Oracle preserves the parent model and thinking level, and defaults to fork context.
+- Worker preserves the parent model and thinking level, defaults to fork context, and requires `worktree:true` plus a gate.
 - High- and critical-risk lanes preserve the parent runtime.
 - Medium-risk economical routing prefers a closer lower-cost candidate instead of blindly selecting the cheapest one.
 
 ### `economy`
 
-Explicit cost-first routing. Lower-cost same-provider models may be used for economical duties, including reviewers. Oracle and worker are exceptions: both preserve the parent model and prefer high thinking. If no eligible candidate exists for an economical duty, the router lowers the parent thinking level and finally falls back to the parent runtime.
+Explicit cost-first routing. Lower-cost same-provider models may be used for economical duties, including reviewers, but their thinking level remains below the parent. Oracle and worker are exceptions to model downgrading: both preserve the parent model and exact parent thinking level. If no eligible candidate exists for an economical duty, the router lowers the parent thinking level and finally falls back to the parent runtime.
 
 ### `strict`
 
-Preserves the parent model and current thinking level; Oracle and worker may raise thinking to high to honor their role contracts. Use strict for release, security, irreversible, or explicitly quality-critical work.
+Preserves the parent model and current thinking level. No role, including Oracle or worker, may raise thinking above the parent. Use strict for release, security, irreversible, or explicitly quality-critical work.
 
 Published model cost is only a conservative proxy; it is not a provider-neutral measure of intelligence, quality, or total spend.
 

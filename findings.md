@@ -17,7 +17,7 @@
 
 ## Oracle 策略决策
 - Oracle 在 economy/balanced/strict 下都保留父模型；其职责是决策一致性，不作为经济型 research。
-- Oracle thinking 优先提升至 `high`；父模型不支持 high 时保留父 thinking 并在 route reason 中说明。
+- Oracle 最初优先提升至 `high`；该策略现已被全局 thinking ceiling 取代，当前严格继承父 thinking。
 - `agent: oracle` 或别名 `advisor` 自动推断为 oracle duty；显式 duty 仍传入 workflow。
 
 ## Oracle 最终验证
@@ -36,4 +36,12 @@
 - host gate 在 worktree 内通过；handoff 与 patch 路径由父会话正常收到。
 - 独立 reviewer 发现任意 `writer`/自定义可写 agent 可被默认归为 research 的绕过；已改为完整 builtin allowlist 和 agent-duty 强绑定。
 - 负向独立 Pi 验收：`agent=writer,duty=research` 在 spawn 前返回 Unsupported adaptive agent；父 fixture checkout 无文件和 Git 状态变化。
-- Worker 在父模型不支持 high 时保留父 thinking；README 用“prefers high”准确描述，并新增测试固定该行为。
+- Worker 最初优先提升至 high；该策略现已被全局 thinking ceiling 取代，当前严格继承父 thinking。
+
+## 全局 Thinking Ceiling
+- 用户确认保留现有经济模型路由，但所有 subagent thinking 不得高于父模型。
+- scout/reviewer/research 的既有路径已在路由算法中限制为低于或等于父 thinking；唯一越界路径是 Oracle/Worker 自动提升 high。
+- 新统一矩阵测试覆盖 5 种 duty × 3 种 quality policy，并验证 route thinking rank 不超过 medium 父级。
+- Oracle/Worker 现保留父模型和完全相同的父 thinking；低 thinking 父级有独立回归测试。
+- 新 Pi 进程以父 `gpt-5.6-sol:low` 同时运行 Oracle 与 Worker，两条 route 均为同模型 `low`；Worker gate 通过、patch captured、cleanup complete，父 fixture clean。
+- 独立 reviewer 无 blocker、confidence high；其 low note 指出经济路由测试只断言模型，已补充 lower-cost thinking=`low` 和 same-model-lower-thinking fallback 的精确回归断言。

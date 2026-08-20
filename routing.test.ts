@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inferDuty, selectRoute, type RuntimeModel } from "./routing.ts";
+import { inferDuty, selectRoute, thinkingRank, type RuntimeModel } from "./routing.ts";
 
 const parent: RuntimeModel = {
 	id: "parent",
@@ -53,7 +53,7 @@ test("every supported read-only agent is duty-bound", () => {
 });
 
 for (const qualityPolicy of ["economy", "balanced", "strict"] as const) {
-	test(`oracle preserves the parent model and prefers high thinking under ${qualityPolicy}`, () => {
+	test(`oracle preserves the parent model and thinking under ${qualityPolicy}`, () => {
 		const route = selectRoute(parent, [parent, economy], "medium", {
 			complexity: "standard",
 			risk: "low",
@@ -62,27 +62,23 @@ for (const qualityPolicy of ["economy", "balanced", "strict"] as const) {
 			minContextWindow: 0,
 		});
 		assert.equal(route?.model.id, "parent");
-		assert.equal(route?.thinking, "high");
+		assert.equal(route?.thinking, "medium");
 		assert.equal(route?.strategy, "same-model");
 		assert.match(route?.reason.join(" ") ?? "", /oracle/i);
 	});
 }
 
-test("oracle keeps the parent thinking when high is unsupported", () => {
-	const limitedParent: RuntimeModel = {
-		...parent,
-		thinkingLevelMap: { high: null },
-	};
-	const route = selectRoute(limitedParent, [limitedParent, economy], "medium", {
-		complexity: "standard",
+test("oracle inherits a low parent thinking level without raising it", () => {
+	const route = selectRoute(parent, [parent, economy], "low", {
+		complexity: "complex",
 		risk: "low",
 		qualityPolicy: "balanced",
 		duty: "oracle",
 		minContextWindow: 0,
 	});
 	assert.equal(route?.model.id, "parent");
-	assert.equal(route?.thinking, "medium");
-	assert.match(route?.reason.join(" ") ?? "", /unsupported/i);
+	assert.equal(route?.thinking, "low");
+	assert.match(route?.reason.join(" ") ?? "", /preserve parent thinking low/i);
 });
 
 const routeFor = (duty: "scout" | "reviewer" | "research", risk: "low" | "high", qualityPolicy: "economy" | "balanced") =>
@@ -100,14 +96,49 @@ test("existing balanced reviewer and high-risk protections remain unchanged", ()
 	assert.equal(routeFor("research", "high", "balanced")?.model.id, "parent");
 });
 
-test("existing economical read routes remain unchanged", () => {
-	assert.equal(routeFor("reviewer", "low", "economy")?.model.id, "economy");
-	assert.equal(routeFor("scout", "low", "balanced")?.model.id, "economy");
-	assert.equal(routeFor("research", "low", "balanced")?.model.id, "economy");
+test("existing economical read routes remain lower-cost and below parent thinking", () => {
+	for (const route of [
+		routeFor("reviewer", "low", "economy"),
+		routeFor("scout", "low", "balanced"),
+		routeFor("research", "low", "balanced"),
+	]) {
+		assert.equal(route?.model.id, "economy");
+		assert.equal(route?.thinking, "low");
+		assert.equal(route?.strategy, "lower-cost");
+	}
+});
+
+test("same-model economical fallback remains below parent thinking", () => {
+	const route = selectRoute(parent, [parent], "medium", {
+		complexity: "standard",
+		risk: "low",
+		qualityPolicy: "balanced",
+		duty: "scout",
+		minContextWindow: 0,
+	});
+	assert.equal(route?.model.id, "parent");
+	assert.equal(route?.thinking, "low");
+	assert.equal(route?.strategy, "same-model-lower-thinking");
+});
+
+test("no subagent route exceeds the parent thinking level", () => {
+	for (const duty of ["scout", "reviewer", "research", "oracle", "worker"] as const) {
+		for (const qualityPolicy of ["economy", "balanced", "strict"] as const) {
+			const route = selectRoute(parent, [parent, economy], "medium", {
+				complexity: "complex",
+				risk: "low",
+				qualityPolicy,
+				duty,
+				minContextWindow: 0,
+			});
+			assert.ok(route, `${duty}/${qualityPolicy} should produce a route`);
+			assert.ok(thinkingRank(route.thinking) <= thinkingRank("medium"), `${duty}/${qualityPolicy} exceeded parent thinking`);
+		}
+	}
 });
 
 for (const qualityPolicy of ["economy", "balanced", "strict"] as const) {
-	test(`worker preserves the parent model and prefers high thinking under ${qualityPolicy}`, () => {
+	test(`worker preserves the parent model and thinking under ${qualityPolicy}`, () => {
 		const route = selectRoute(parent, [parent, economy], "medium", {
 			complexity: "standard",
 			risk: "low",
@@ -116,22 +147,21 @@ for (const qualityPolicy of ["economy", "balanced", "strict"] as const) {
 			minContextWindow: 0,
 		});
 		assert.equal(route?.model.id, "parent");
-		assert.equal(route?.thinking, "high");
+		assert.equal(route?.thinking, "medium");
 		assert.equal(route?.strategy, "same-model");
 		assert.match(route?.reason.join(" ") ?? "", /worker/i);
 	});
 }
 
-test("worker keeps the parent thinking when high is unsupported", () => {
-	const limitedParent: RuntimeModel = { ...parent, thinkingLevelMap: { high: null } };
-	const route = selectRoute(limitedParent, [limitedParent, economy], "medium", {
-		complexity: "standard",
+test("worker inherits a minimal parent thinking level without raising it", () => {
+	const route = selectRoute(parent, [parent, economy], "minimal", {
+		complexity: "complex",
 		risk: "medium",
 		qualityPolicy: "balanced",
 		duty: "worker",
 		minContextWindow: 0,
 	});
 	assert.equal(route?.model.id, "parent");
-	assert.equal(route?.thinking, "medium");
-	assert.match(route?.reason.join(" ") ?? "", /unsupported/i);
+	assert.equal(route?.thinking, "minimal");
+	assert.match(route?.reason.join(" ") ?? "", /preserve parent thinking minimal/i);
 });
