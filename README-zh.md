@@ -8,7 +8,7 @@ Adaptive Subagent Router 是一个面向 [Pi](https://github.com/badlogic/pi-mon
 
 ## 开发者预览
 
-本扩展目前处于开发者预览阶段。随着真实使用数据积累，路由策略和日志格式可能继续变化。它只委派**只读** subagent（scout、reviewer、research）；所有文件写入由父 agent 自己完成，不由被委派的 lane 执行。
+本扩展目前处于开发者预览阶段。随着真实使用数据积累，路由策略和日志格式可能继续变化。它只委派**只读** subagent（scout、reviewer、research、oracle）；所有文件写入由父 agent 自己完成，不由被委派的 lane 执行。
 
 ## 主要功能
 
@@ -16,6 +16,7 @@ Adaptive Subagent Router 是一个面向 [Pi](https://github.com/badlogic/pi-mon
 - 支持 `balanced`、`economy`、`strict` 三种质量策略。
 - 没有合适低成本模型时，自动降低思考级别作为 fallback。
 - balanced 下保护 reviewer 以及 high/critical 风险任务的父运行时。
+- Oracle 始终保留父模型、优先使用 high thinking，并默认使用 fork 上下文。
 - 要求子 agent 报告置信度和 `needsEscalation`。
 - 可选地由父运行时复核低置信度结果。
 - 可选地使用父运行时对第一个只读 lane 进行校准。
@@ -30,16 +31,17 @@ Adaptive Subagent Router 是一个面向 [Pi](https://github.com/badlogic/pi-mon
 
 - 低风险 `scout` 和 `research` lane 可以使用同 provider 的低成本 reasoning 模型；
 - reviewer 保留父模型和当前思考级别；
+- Oracle 保留父模型、优先使用 high thinking，并默认使用 fork 上下文；
 - high/critical 风险任务保留父运行时；
 - medium-risk 经济路由优先选择较接近的低成本候选，而不是盲目选择最便宜的模型。
 
 ### `economy`
 
-显式成本优先。所有职责，包括 reviewer，都可以使用低成本同 provider 模型。没有合适候选时，先降低父模型思考级别，最后回退到父运行时。
+显式成本优先。经济型职责（包括 reviewer）可以使用低成本同 provider 模型；Oracle 是例外，决策一致性咨询始终保留父模型并优先使用 high thinking。经济型职责没有合适候选时，先降低父模型思考级别，最后回退到父运行时。
 
 ### `strict`
 
-始终保留父模型和当前思考级别。适合发布、安全、不可逆操作或明确要求最高质量的任务。
+保留父模型和当前思考级别；Oracle 可提升至 high thinking，以满足其咨询契约。适合发布、安全、不可逆操作或明确要求最高质量的任务。
 
 模型公开成本只是保守代理，不代表模型能力、质量或最终实际花费。
 
@@ -146,7 +148,7 @@ $PI_CODING_AGENT_DIR/adaptive-subagent-router/usage.jsonl
 
 ### 设计上只读
 
-本扩展不委派文件写入。每个 lane 都是只读 subagent（scout、reviewer 或 research）：它只检查并报告，任何实际修改都由父 agent 自己完成。这从根本上消除了文件 authority 问题——没有 writer lane 需要约束，也就没有可被绕过的 authority 边界。
+本扩展不委派文件写入。每个 lane 都是只读 subagent（scout、reviewer、research 或 oracle）：它只检查并报告，任何实际修改都由父 agent 自己完成。这从根本上消除了文件 authority 问题——没有 writer lane 需要约束，也就没有可被绕过的 authority 边界。
 
 ### 评测范围
 
@@ -166,7 +168,7 @@ done
 pi --list-models
 ```
 
-实验 benchmark、测试和阶段性报告不属于安装目录的运行时文件；实际运行数据统一写入 JSONL 使用日志。
+测试是仅用于仓库开发的文件，不属于运行时入口；实际运行数据统一写入 JSONL 使用日志。
 
 ## License
 

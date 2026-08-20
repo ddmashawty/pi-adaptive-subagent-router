@@ -3,6 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
 	costScore,
+	inferDuty,
 	lowerCostCandidates,
 	modelRef,
 	selectRoute,
@@ -56,9 +57,9 @@ async function rpcSpawn(pi: ExtensionAPI, params: Record<string, unknown>): Prom
 
 const laneSchema = Type.Object({
 	key: Type.String({ minLength: 1, description: "Stable lane key." }),
-	agent: Type.String({ minLength: 1, description: "Subagent role, for example scout, reviewer, or researcher." }),
+	agent: Type.String({ minLength: 1, description: "Subagent role, for example scout, reviewer, researcher, or oracle." }),
 	task: Type.String({ minLength: 1, description: "Narrow task contract for this lane." }),
-	duty: Type.Optional(Type.String({ enum: ["scout", "reviewer", "research"], description: "Routing duty. Defaults from the agent name." })),
+	duty: Type.Optional(Type.String({ enum: ["scout", "reviewer", "oracle", "research"], description: "Routing duty. Defaults from the agent name." })),
 	risk: Type.Optional(Type.String({ enum: ["low", "medium", "high", "critical"], description: "Lane-specific risk override." })),
 	gate: Type.Optional(Type.String({ minLength: 1, description: "Host verification command. Required for critical reviewer lanes." })),
 	wave: Type.Optional(Type.Integer({ minimum: 1, maximum: 99, description: "Waves 1-99 run serially; lanes in one wave run in parallel." })),
@@ -66,14 +67,6 @@ const laneSchema = Type.Object({
 	cwd: Type.Optional(Type.String({ minLength: 1, description: "Lane working directory; defaults to the parent cwd." })),
 	output: Type.Optional(Type.Unsafe({ anyOf: [{ type: "string", minLength: 1 }, { type: "boolean", enum: [false] }], description: "Unique output path, or false. Defaults to false to prevent agent-default path collisions." })),
 });
-
-function inferDuty(agent: string, explicit?: LaneDuty): LaneDuty {
-	if (explicit) return explicit;
-	const normalized = agent.toLowerCase();
-	if (normalized.includes("review")) return "reviewer";
-	if (normalized.includes("scout")) return "scout";
-	return "research";
-}
 
 export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
 	const trackedRuns = pendingUsageRuns();
@@ -96,7 +89,7 @@ export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
 		if (!parent || !thinking) return;
 		const candidates = candidateSummary(parent, ctx.modelRegistry.getAvailable() as RuntimeModel[]);
 		return {
-			systemPrompt: `${event.systemPrompt}\n\n## Adaptive subagent routing (enforced)\nBefore delegating, state a concise decision covering independent value, complexity, risk, quality policy, lane duties, and evidence/gates. Do not reveal private chain-of-thought.\n\nParent runtime: ${parent.provider}/${parent.id}:${thinking}. Same-provider lower-cost candidates: ${candidates}. Default to qualityPolicy=balanced: economical routing is allowed for low-risk scout/research lanes, but every reviewer lane and high/critical risk lane preserves the parent runtime. Use economy only when cost is the explicit priority; use strict for release, security, irreversible, or user-designated quality gates. Never cross providers automatically.\n\nReviewer findings must distinguish verified evidence from static suspicion. Critical reviewer lanes require a gate command. For execution, call adaptive_subagent_launch, not subagent directly.`
+			systemPrompt: `${event.systemPrompt}\n\n## Adaptive subagent routing (enforced)\nBefore delegating, state a concise decision covering independent value, complexity, risk, quality policy, lane duties, and evidence/gates. Do not reveal private chain-of-thought.\n\nParent runtime: ${parent.provider}/${parent.id}:${thinking}. Same-provider lower-cost candidates: ${candidates}. Default to qualityPolicy=balanced: economical routing is allowed for low-risk scout/research lanes, but every reviewer, oracle, and high/critical risk lane preserves the parent runtime. Oracle always keeps the parent model, prefers high thinking, and defaults to fork context. Use economy only when cost is the explicit priority; use strict for release, security, irreversible, or user-designated quality gates. Never cross providers automatically.\n\nReviewer findings must distinguish verified evidence from static suspicion. Critical reviewer lanes require a gate command. For execution, call adaptive_subagent_launch, not subagent directly.`
 		};
 	});
 
@@ -163,7 +156,11 @@ export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
 					eligibleLowerCost: selected.eligibleLowerCost,
 				};
 			});
-			const normalizedLanes = params.lanes.map((lane, index) => ({ ...lane, risk: routes[index]!.risk }));
+			const normalizedLanes = params.lanes.map((lane, index) => ({
+				...lane,
+				risk: routes[index]!.risk,
+				duty: routes[index]!.duty,
+			}));
 			const autoEscalate = params.autoEscalate ?? routes.some((route) => route.risk === "high" || route.risk === "critical");
 			const workflowScript = buildWorkflow(
 				normalizedLanes as Array<Record<string, unknown>>,

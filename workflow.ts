@@ -31,7 +31,7 @@ export function buildWorkflow(
 			agent: lane.agent,
 			task: `${String(lane.task)}\n\n${qualityContract}`,
 			model: routes[index]!.model,
-			context: lane.context,
+			context: lane.context ?? (lane.duty === "oracle" ? "fork" : undefined),
 			cwd: lane.cwd ?? defaultCwd,
 			output: lane.output ?? false,
 			...(typeof lane.gate === "string" ? { gate: lane.gate } : {}),
@@ -54,7 +54,7 @@ export function buildWorkflow(
 			agent: source.agent,
 			task: `${String(source.task)}\n\nCalibration contract: independently answer the same task so the parent can compare quality against the economical route.`,
 			model: options.calibration.model,
-			context: source.context ?? "fresh",
+			context: source.context ?? (source.duty === "oracle" ? "fork" : "fresh"),
 			cwd: source.cwd ?? defaultCwd,
 			output: false,
 		})});`);

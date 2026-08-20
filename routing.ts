@@ -2,7 +2,7 @@ export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhi
 export type Complexity = "simple" | "standard" | "complex";
 export type Risk = "low" | "medium" | "high" | "critical";
 export type QualityPolicy = "economy" | "balanced" | "strict";
-export type LaneDuty = "scout" | "reviewer" | "research";
+export type LaneDuty = "scout" | "reviewer" | "oracle" | "research";
 export type RouteStrategy = "lower-cost" | "same-model-lower-thinking" | "same-model";
 
 export type RuntimeModel = {
@@ -56,6 +56,22 @@ export function supportsThinking(model: RuntimeModel, level: ThinkingLevel): boo
 	return thinkingRank(level) <= thinkingRank("high");
 }
 
+export function inferDuty(agent: string, explicit?: LaneDuty): LaneDuty {
+	const normalized = agent.toLowerCase();
+	const isOracle = normalized === "oracle" || normalized === "advisor";
+	if (explicit === "oracle" && !isOracle) {
+		throw new Error(`Oracle duty requires the oracle agent or advisor alias, not "${agent}".`);
+	}
+	if (isOracle && explicit && explicit !== "oracle") {
+		throw new Error(`Agent "${agent}" must use oracle duty, not "${explicit}".`);
+	}
+	if (isOracle) return "oracle";
+	if (explicit) return explicit;
+	if (normalized.includes("review")) return "reviewer";
+	if (normalized.includes("scout")) return "scout";
+	return "research";
+}
+
 function selectLowerThinking(model: RuntimeModel, parentThinking: ThinkingLevel, complexity: Complexity): ThinkingLevel | undefined {
 	const parentRank = thinkingRank(parentThinking);
 	if (parentRank <= 0) return undefined;
@@ -101,6 +117,27 @@ export function selectRoute(
 	const parentRank = thinkingRank(parentThinking);
 	if (parentRank < 0) return undefined;
 	const candidates = lowerCostCandidates(parent, models, request.minContextWindow);
+	if (request.duty === "oracle") {
+		if (parent.contextWindow < request.minContextWindow) return undefined;
+		const highThinking = thinkingRank(parentThinking) >= thinkingRank("high")
+			? parentThinking
+			: supportsThinking(parent, "high") ? "high" : parentThinking;
+		return {
+			model: parent,
+			thinking: highThinking,
+			strategy: "same-model",
+			reason: [
+				"oracle decision-consistency priority",
+				"preserve parent model for inherited-context consultation",
+				highThinking === "high" && parentThinking !== "high"
+					? "raise oracle thinking to high"
+					: highThinking === parentThinking && thinkingRank(parentThinking) < thinkingRank("high")
+						? "high thinking unsupported; preserve parent thinking"
+						: `preserve parent thinking ${parentThinking}`,
+			],
+			eligibleLowerCost: candidates.length,
+		};
+	}
 	const preserveReason = shouldPreserveParent(request);
 	if (preserveReason) {
 		if (parent.contextWindow < request.minContextWindow) return undefined;

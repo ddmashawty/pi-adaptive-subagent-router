@@ -8,7 +8,7 @@ It keeps the parent agent in control while adding a runtime policy layer that re
 
 ## Developer preview
 
-This extension is currently in developer preview. Routing policy and log formats may change as real usage provides more evidence. It delegates **read-only** subagent work only (scout, reviewer, research); all file writes are performed by the parent agent, not by delegated lanes.
+This extension is currently in developer preview. Routing policy and log formats may change as real usage provides more evidence. It delegates **read-only** subagent work only (scout, reviewer, research, and oracle); all file writes are performed by the parent agent, not by delegated lanes.
 
 ## Features
 
@@ -16,6 +16,7 @@ This extension is currently in developer preview. Routing policy and log formats
 - Three quality policies: `balanced`, `economy`, and `strict`.
 - Lower thinking-level fallback when no eligible lower-cost model exists.
 - Parent-runtime protection for balanced reviewers and high/critical-risk work.
+- Oracle routing that always preserves the parent model, prefers high thinking, and defaults to fork context.
 - Evidence contracts requiring confidence and `needsEscalation` reporting.
 - Optional parent-runtime escalation for low-confidence results.
 - Optional read-only calibration against the parent runtime.
@@ -30,16 +31,17 @@ This extension is currently in developer preview. Routing policy and log formats
 
 - Low-risk `scout` and `research` lanes may use a lower-cost same-provider reasoning model.
 - Reviewers preserve the parent model and current thinking level.
+- Oracle preserves the parent model, prefers high thinking, and defaults to fork context.
 - High- and critical-risk lanes preserve the parent runtime.
 - Medium-risk economical routing prefers a closer lower-cost candidate instead of blindly selecting the cheapest one.
 
 ### `economy`
 
-Explicit cost-first routing. Lower-cost same-provider models may be used for every duty, including reviewers. If no eligible candidate exists, the router lowers the parent thinking level and finally falls back to the parent runtime.
+Explicit cost-first routing. Lower-cost same-provider models may be used for economical duties, including reviewers. Oracle is the exception: decision-consistency consultations always preserve the parent model and prefer high thinking. If no eligible candidate exists for an economical duty, the router lowers the parent thinking level and finally falls back to the parent runtime.
 
 ### `strict`
 
-Always preserves the parent model and current thinking level. Use it for release, security, irreversible, or explicitly quality-critical work.
+Preserves the parent model and current thinking level; Oracle may raise thinking to high to honor its advisory contract. Use strict for release, security, irreversible, or explicitly quality-critical work.
 
 Published model cost is only a conservative proxy; it is not a provider-neutral measure of intelligence, quality, or total spend.
 
@@ -146,7 +148,7 @@ Logging failures are reported to stderr but never block routing.
 
 ### Read-only by design
 
-This extension does not delegate file writes. Every lane is a read-only subagent (scout, reviewer, or research): it inspects and reports, and the parent agent applies any changes itself. This removes the file-authority problem entirely — there is no writer lane to constrain, so there is no authority boundary to bypass.
+This extension does not delegate file writes. Every lane is a read-only subagent (scout, reviewer, research, or oracle): it inspects and reports, and the parent agent applies any changes itself. This removes the file-authority problem entirely — there is no writer lane to constrain, so there is no authority boundary to bypass.
 
 ### Evaluation scope
 
@@ -166,7 +168,7 @@ done
 pi --list-models
 ```
 
-Experimental benchmarks, tests, and interim reports are intentionally not part of the installed runtime directory. Operational observations belong in the JSONL usage log.
+Tests are repository-only development files and are not runtime entry points. Operational observations belong in the JSONL usage log.
 
 ## License
 
