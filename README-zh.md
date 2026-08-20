@@ -52,7 +52,9 @@ Adaptive Subagent Router 是一个面向 [Pi](https://github.com/badlogic/pi-mon
 
 ## 依赖
 
-本扩展将执行委派给 **pi-subagents**（Pi 的 subagent 运行时）。每次 spawn 前先使用 pi-subagents 公开 launch-contract preflight，再通过 `subagents:rpc:v1` 事件桥启动 workflow，因此必须先安装并加载 pi-subagents。
+本扩展依赖 [**nicobailon/pi-subagents**](https://github.com/nicobailon/pi-subagents)（Pi 的 subagent 运行时）。每次 spawn 前先使用 pi-subagents 公开 launch-contract preflight，再通过 `subagents:rpc:v1` 事件桥启动 workflow，因此必须先安装并加载 pi-subagents。
+
+Adaptive Subagent Router 建立在 pi-subagents 提供的基础之上。谨向项目作者 Nico Bailon 以及所有贡献者致以诚挚的感谢与敬意，感谢他们创建并持续维护这一项目。
 
 作为 Pi 包安装：
 

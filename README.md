@@ -52,7 +52,9 @@ Published model cost is only a conservative proxy; it is not a provider-neutral 
 
 ## Dependencies
 
-This extension delegates execution to **pi-subagents**, Pi's subagent runtime. It uses pi-subagents' public launch-contract preflight before spawning each workflow through the `subagents:rpc:v1` event bridge, so pi-subagents must be installed and loaded first.
+This extension depends on [**nicobailon/pi-subagents**](https://github.com/nicobailon/pi-subagents), Pi's subagent runtime. It uses pi-subagents' public launch-contract preflight before spawning each workflow through the `subagents:rpc:v1` event bridge, so pi-subagents must be installed and loaded first.
+
+Adaptive Subagent Router is built on the foundation provided by pi-subagents. We extend our sincere appreciation and respect to Nico Bailon and all contributors for creating and maintaining the project.
 
 Install it as a Pi package:
 
