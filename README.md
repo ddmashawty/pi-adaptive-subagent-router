@@ -1,67 +1,88 @@
 # Adaptive Subagent Router
 
+一个面向 Pi 的全局扩展，用于根据任务风险、质量策略、lane 职责、模型成本、上下文窗口、证据要求和 writer 隔离策略，动态路由 subagent 工作。
+
 A global [Pi](https://github.com/badlogic/pi-mono) extension that routes subagent work according to task risk, quality policy, lane duty, model cost, context requirements, evidence gates, and writer isolation.
 
-> The current rollout is **read-only**. Writer lanes fail closed until the authority gate is upgraded to use a writer-start baseline and to account for ignored untracked files.
+> 当前版本处于**只读灰度阶段**。所有 writer lane 会 fail-closed；待 writer authority gate 完成 writer-start baseline 和 ignored untracked 文件处理后再开放写入。
+>
+> The current rollout is **read-only**. Writer lanes fail closed until the authority gate supports a writer-start baseline and ignored untracked files.
 
-## Why
+## 开发目的 | Purpose
 
-Subagent delegation often uses one static model for every task. That is simple, but it can waste cost and latency on low-risk reconnaissance while also making it easy to under-protect reviews or high-impact work.
+传统的 subagent 委派通常为所有任务固定使用同一个模型，容易在低风险任务上浪费成本和延迟，也可能错误降级 reviewer 或高风险任务。
 
-This extension keeps the parent agent in control while adding a runtime policy layer that:
+Subagent delegation often uses one static model for every task. This can waste cost and latency on low-risk work, while also making it easy to under-protect reviews or high-impact tasks.
 
-- reads the active parent model and current model catalogue on every turn;
-- prefers lower-cost models only when the task policy allows it;
-- preserves reviewer quality and high-risk capability by default;
-- prevents direct unvalidated `subagent` execution;
-- requires explicit risk, duty, evidence, and isolation information;
-- records routing decisions and observed execution effects for later optimization.
+本扩展在不替代主 agent 决策的前提下增加动态策略：读取父运行时和模型目录，根据风险选择路由，校验证据与隔离要求，并记录真实执行效果。
 
-The extension does not hard-code a provider or model ID and never crosses providers automatically.
+The extension keeps the parent agent in control while adding a runtime policy layer that reads the active model catalogue, selects routes by risk, validates evidence and isolation requirements, and records observed execution effects.
 
-## Features
+扩展不绑定具体 provider 或模型 ID，也不会自动跨 provider 路由。
 
-- **Dynamic routing** — selects a route from the active runtime and available model catalogue.
-- **Risk-aware quality policies** — `balanced`, `economy`, and `strict`.
-- **Thinking-level fallback** — if no cheaper same-provider model is available, lowers the parent thinking level before reusing the parent runtime.
-- **Reviewer protection** — balanced non-economy reviewers preserve the parent model and thinking level.
-- **Evidence contract** — child lanes report confidence and `needsEscalation`; blockers require command/gate evidence or a reproducible code path.
-- **Escalation** — low-confidence child reports can be independently rechecked by the parent runtime.
-- **Calibration** — optionally repeats the first read-only lane on the parent runtime for a live comparison.
-- **Context selection** — enforces a minimum context window on the selected route.
-- **Writer safety checks** — validates authority prefixes, duplicate keys/outputs, writer overlap, and worktree requirements. Writer execution is currently disabled fail-closed.
-- **Provider compatibility** — removes optional prompt-cache fields from child-only provider requests while leaving parent requests unchanged.
-- **Usage logging** — records privacy-safe launch and completion metadata in durable JSONL.
+It does not hard-code a provider or model ID and never crosses providers automatically.
 
-## Routing strategy
+## 主要功能 | Features
 
-### `balanced` (default)
+- **动态路由 | Dynamic routing**：根据当前父运行时和可用模型目录选择路由。
+- **风险感知策略 | Risk-aware policies**：支持 `balanced`、`economy` 和 `strict`。
+- **思考级别降级 | Thinking fallback**：没有合适的低成本模型时，先降低父模型思考级别，再回退到父运行时。
+- **Reviewer 保护 | Reviewer protection**：balanced 下的非 economy reviewer 保留父模型和当前思考级别。
+- **证据约束 | Evidence contract**：要求子 agent 报告置信度和 `needsEscalation`；blocker 必须有命令/gate 证据或可复现代码路径。
+- **自动升级复核 | Escalation**：低置信度结果可由父运行时重新核查。
+- **只读校准 | Calibration**：可选地使用父模型重复第一个只读 lane，进行实际质量对照。
+- **上下文约束 | Context requirements**：支持为最终模型指定最小上下文窗口。
+- **隔离校验 | Isolation checks**：校验 lane key、输出路径、writer authority、authority 重叠和 worktree 要求。
+- **Provider 兼容处理 | Provider compatibility**：仅对 child 请求移除可能导致兼容问题的 prompt-cache 字段。
+- **使用日志 | Usage logging**：以隐私安全的 JSONL 记录路由和执行效果。
+
+## 路由策略 | Routing policies
+
+### `balanced`（默认 | default）
+
+中文：
+
+- 低风险 `scout`/`research` 可以使用同 provider 的低成本 reasoning 模型；
+- reviewer 保留父模型和当前思考级别；
+- high/critical 风险任务保留父运行时；
+- medium-risk writer 保留父运行时，但当前所有 writer 仍被灰度保护直接拒绝；
+- medium-risk 经济路由优先选择较接近的低成本候选。
+
+English:
 
 - Low-risk `scout`/`research` lanes may use a lower-cost same-provider reasoning model.
 - Reviewers preserve the parent model and thinking level.
 - High and critical risk lanes preserve the parent runtime.
 - Medium-risk writers preserve the parent runtime, although all writers are currently rejected by the rollout guard.
-- Medium-risk economical routes prefer a closer lower-cost candidate rather than blindly choosing the cheapest candidate.
+- Medium-risk economical routing prefers a closer lower-cost candidate instead of blindly selecting the cheapest one.
 
 ### `economy`
 
-Cost-first routing is explicit. Lower-cost same-provider models are preferred for every duty, including reviewers. If no eligible cheaper model exists, the router lowers the parent thinking level and finally falls back to the parent runtime.
+中文：显式成本优先。所有职责，包括 reviewer，都可以使用低成本同 provider 模型；没有合适候选时先降低父模型思考级别，最后回退到父运行时。
+
+English: Explicit cost-first routing. Lower-cost same-provider models may be used for every duty, including reviewers. If no eligible candidate exists, the router lowers the parent thinking level and finally falls back to the parent runtime.
 
 ### `strict`
 
-Always preserves the parent model and current thinking level. Use for release, security, irreversible, or explicitly quality-critical work.
+中文：始终保留父模型和当前思考级别，适合发布、安全、不可逆操作或明确要求最高质量的任务。
 
-Cost is only a conservative published-cost proxy. It is not a provider-neutral measure of intelligence or quality.
+English: Always preserves the parent model and current thinking level. Use it for release, security, irreversible, or explicitly quality-critical work.
 
-## Installation
+模型公开成本只是保守代理，不代表模型能力、质量或最终实际花费。
 
-The extension is designed for global Pi auto-discovery:
+Published model cost is only a conservative proxy; it is not a provider-neutral measure of intelligence, quality, or total spend.
+
+## 安装 | Installation
+
+扩展设计为 Pi 全局自动发现：
+
+The extension is designed for Pi global auto-discovery:
 
 ```text
 ~/.pi/agent/extensions/adaptive-subagent-router/index.ts
 ```
 
-Its runtime source files are:
+当前运行时源文件 | Runtime source files:
 
 ```text
 cacheCompatibility.ts
@@ -72,24 +93,21 @@ validation.ts
 workflow.ts
 ```
 
-Start a new Pi session or run `/reload` after changing the extension.
+修改后执行 `/reload`，或重新启动 Pi 会话。
 
-## Use
+Run `/reload` after changes, or start a new Pi session.
 
-The extension adds the `adaptive_subagent_launch` tool. Before delegation, the parent agent should state a concise routing decision covering:
+## 使用方法 | Usage
 
-- why delegation is useful;
-- complexity and risk;
-- quality policy;
-- lane roles and duties;
-- evidence/gate requirements;
-- writer isolation and authority boundaries.
+扩展注册 `adaptive_subagent_launch` 工具。委派前，父 agent 应说明为什么需要委派、任务复杂度和风险、质量策略、lane 职责、证据/gate 要求以及 writer 隔离边界。
 
-A conceptual call looks like this:
+The extension registers the `adaptive_subagent_launch` tool. Before delegating, the parent should state why delegation is useful, task complexity and risk, quality policy, lane duties, evidence/gate requirements, and writer isolation boundaries.
+
+概念性调用 | Conceptual call:
 
 ```json
 {
-  "decision": "Low-risk read-only reconnaissance can use balanced routing; no writer lanes; report evidence and confidence.",
+  "decision": "低风险只读侦察适合 balanced 路由；不启用 writer；要求文件证据和置信度。",
   "complexity": "standard",
   "risk": "low",
   "qualityPolicy": "balanced",
@@ -100,7 +118,7 @@ A conceptual call looks like this:
       "agent": "scout",
       "role": "read",
       "duty": "scout",
-      "task": "Inspect the target files and report concrete findings with file evidence.",
+      "task": "检查目标文件并返回带文件证据的具体发现。",
       "context": "fresh",
       "output": false
     }
@@ -108,55 +126,83 @@ A conceptual call looks like this:
 }
 ```
 
-The extension converts each lane into a `pi-subagents` workflow with an explicit model/thinking route. Direct execution calls to the underlying `subagent` tool are blocked so that routing and isolation checks cannot be skipped.
+扩展会把每个 lane 转换为 `pi-subagents` workflow，并为每个子任务写入明确模型和思考级别。底层直接调用 `subagent` 会被阻止，以避免绕过路由、证据和隔离检查。
 
-## Usage logging
+The extension converts each lane into a `pi-subagents` workflow with an explicit model and thinking level. Direct execution calls to the underlying `subagent` tool are blocked so routing, evidence, and isolation checks cannot be bypassed.
 
-Each successful adaptive launch appends a `launch` record, and the process-local `subagent:async-complete` event appends a `completion` record after the run finishes.
+## 使用日志 | Usage logging
 
-Default path:
+每次成功启动 adaptive workflow 时写入一条 `launch` 记录；收到 `subagent:async-complete` 后写入一条 `completion` 记录。
+
+Each successful adaptive workflow launch appends a `launch` record. A `completion` record is appended after `subagent:async-complete` is received.
+
+默认路径 | Default path:
 
 ```text
 ~/.pi/agent/adaptive-subagent-router/usage.jsonl
 ```
 
-If `PI_CODING_AGENT_DIR` is set, the log is written under that directory instead:
+设置 `PI_CODING_AGENT_DIR` 后，日志位于 `$PI_CODING_AGENT_DIR/adaptive-subagent-router/usage.jsonl`。
 
-```text
-$PI_CODING_AGENT_DIR/adaptive-subagent-router/usage.jsonl
-```
+When `PI_CODING_AGENT_DIR` is set, the log is written to `$PI_CODING_AGENT_DIR/adaptive-subagent-router/usage.jsonl`.
 
-The log contains routing metadata and observed effects such as:
+记录内容 | Recorded fields:
 
-- parent and selected routes;
-- complexity, quality policy, escalation/calibration settings;
-- completion state and success/failure outcome;
-- duration;
-- input/output/total tokens when available;
-- observed USD cost when available.
+- 父运行时和最终路由 | parent runtime and selected routes；
+- 复杂度、质量策略、升级和校准配置 | complexity, quality policy, escalation and calibration settings；
+- 完成状态、成功/失败结果 | completion state and success/failure outcome；
+- 执行时延 | duration；
+- 可获得时的输入、输出和总 token | input, output, and total tokens when available；
+- 可获得时的美元成本 | observed USD cost when available。
 
-Task text is intentionally not logged. Writes are serialized, directory permissions default to `0700`, log permissions default to `0600`, and each append is followed by `sync()` for stronger crash durability. After an extension reload, the logger recovers recent unmatched launches from a bounded log tail and correlates later completions.
+日志不会记录任务正文。写入串行化，目录权限默认 `0700`，文件权限默认 `0600`，每次追加后执行 `sync()`。扩展 reload 后，会从最近的有限日志尾部恢复尚未完成的启动记录。
 
-Logging failures are reported to stderr but do not block routing.
+Task text is not logged. Writes are serialized, directories default to `0700`, files default to `0600`, and each append is followed by `sync()`. After an extension reload, recent unmatched launches are recovered from a bounded log tail.
 
-## Safety and current limitations
+日志失败只会写入 stderr，不会阻塞正常路由。
 
-- **Writer lanes are disabled.** The previous authority gate compared changes against the current `HEAD`, so a child could hide an out-of-authority change by committing it before the final check. It also did not include ignored untracked files. The router therefore rejects every `role: "write"` lane until a baseline-aware implementation is independently verified.
-- `balanced` savings were observed only for a small low-risk read-only factual-scout pilot. They should be treated as an initial operational signal, not a general quality guarantee.
-- Published model cost is a routing proxy, not actual intelligence, quality, or total spend.
-- Pi extensions are trusted code with full host-process permissions. Install and modify this extension only from a trusted checkout.
+Logging failures are reported to stderr but never block routing.
 
-## Development checks
+## 当前限制与安全说明 | Limitations and safety
 
-The extension uses Pi's TypeScript loader and Node's strip-types support. Useful checks are:
+### Writer 暂不可用 | Writers are currently disabled
+
+当前 writer authority gate 曾经只比较当前 `HEAD` 的变更，因此子 agent 如果在最终 gate 前提交越权文件，可能隐藏该变更；旧逻辑也不会检查 ignored untracked 文件。
+
+The previous writer authority gate compared changes against the current `HEAD`, allowing a child to hide an out-of-authority change by committing before the final check. It also missed ignored untracked files.
+
+因此当前版本对所有 `role: "write"` lane 直接拒绝。完成 writer-start baseline authority gate 并经过独立验证后，才会重新开放 writer。
+
+The current release therefore rejects every `role: "write"` lane. Writers will be reconsidered only after a writer-start baseline authority gate is implemented and independently verified.
+
+### 评测结论范围 | Evaluation scope
+
+此前小样本只读 factual-scout 实验观察到成本和延迟下降，但样本不足以构成普遍质量保证。实际使用时应继续观察任务类型、风险、父/最终路由、token、成本、时延、质量判断、升级结果以及文件变更事件。
+
+A small read-only factual-scout pilot observed lower cost and latency, but it is not a general quality guarantee. In production use, continue observing task type, risk, parent/final route, tokens, cost, latency, quality judgments, escalation results, and file-change events.
+
+其他限制 | Other limitations:
+
+- 模型公开成本不等于模型能力或实际总成本 | published model cost is not model capability or total actual spend；
+- Pi 扩展拥有宿主进程权限，只应从可信来源安装和修改 | Pi extensions have host-process permissions and should only be installed from trusted sources；
+- 当前扩展依赖 Pi TypeScript loader 和 `pi-subagents` RPC | the extension depends on Pi's TypeScript loader and `pi-subagents` RPC。
+
+## 开发检查 | Development checks
 
 ```bash
-node --experimental-strip-types --check index.ts routing.ts workflow.ts validation.ts cacheCompatibility.ts usageLog.ts
+for f in index.ts routing.ts workflow.ts validation.ts cacheCompatibility.ts usageLog.ts; do
+  node --experimental-strip-types --check "$f"
+done
+
 pi --list-models
 ```
 
-The extension intentionally keeps runtime source separate from experimental benchmark and test artifacts. Operational observations belong in the JSONL usage log rather than in the installed extension directory.
+实验 benchmark、测试和阶段性报告不属于安装目录的运行时文件；实际运行数据统一写入 JSONL 使用日志。
+
+Experimental benchmarks, tests, and interim reports are not part of the installed runtime directory. Operational data is written to the JSONL usage log.
 
 ## License
+
+当前尚未声明 License。
 
 No license has been declared yet.
