@@ -21,4 +21,20 @@
 - 修复后 12 项测试、六文件语法检查和 `git diff --check` 全绿。
 - 最终独立 Pi 验收省略 duty/context，自动得到 oracle duty、fork 和 `gpt-5.6-sol:high`；返回 `ORACLE_FINAL_OK`。
 - 最终 run `7e3889aa-e22d-45e4-8a0b-a640f61f214a` complete，2,330 tokens，约 `$0.022343`；child session header 含 parentSession。
-- Oracle 功能完成，准备原子提交；提交后才创建 Worker 的独立计划。
+- Oracle 功能已提交：`1f138ee feat: add adaptive oracle routing`。
+
+## Worker 阶段
+- 已在 Oracle 完成后选择 Worker 作为第二个且唯一的当前功能。
+- 策略边界：单 Worker、强制 managed worktree、必须 gate、整个 worktree authority、父 agent 应用 patch。
+- 已核实 pi-subagents 的 worktree、gate 和 artifactPaths 公开契约，无需修改基础包。
+- 已先建立失败测试，再实现 Worker alias/duty、防绕过、父模型+high、默认 fork、单 worker、强制 worktree+gate、写入 contract 和 handoff 返回。
+- 21 项单元/回归测试、六文件语法检查和 `git diff --check` 全绿。
+- Worker 真实验收通过：自动 worker duty、默认 fork、父模型 high、host gate passed。
+- 父 fixture checkout 保持 clean 且没有 Worker 创建的文件。
+- handoff manifest 记录 changed patch（1 file/1 insertion）和 complete cleanup；worktree/branch 已移除。
+- run `2cf35c1a-2418-401c-8021-8882324c793f` complete，10,176 tokens，约 `$0.076252`。
+- 独立 reviewer 找到 high blocker：未知/自定义 writer 名称可伪装为 research 绕过写入校验。
+- 已先补失败测试，再实施完整 agent allowlist 与 agent-duty 强绑定；新增 Worker high unsupported 回归测试。
+- 24 项测试通过；负向独立 Pi 实跑确认 `agent=writer` 在 spawn 前拒绝，父 fixture checkout 不变。
+- Fresh 独立 reviewer 复审确认 allowlist、duty 绑定、worktree/gate、high fallback 与文档一致，无 blocker，confidence high，needsEscalation false。
+- 当前阶段：最终验证并提交 Worker 原子 commit。

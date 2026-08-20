@@ -19,11 +19,16 @@ export function buildWorkflow(
 	lanes.forEach((lane, index) => {
 		const wave = typeof lane.wave === "number" ? lane.wave : 1;
 		const risk = typeof lane.risk === "string" ? lane.risk : "inherited";
+		const isWorker = lane.duty === "worker";
 		const qualityContract = [
 			"Quality contract:",
 			`- Risk: ${risk}. Distinguish verified findings from static suspicions.`,
-			"- Read-only lane: do not modify project files; report findings with evidence, not edits.",
-			"- Report confidence (low/medium/high) and needsEscalation (true/false).",
+			isWorker
+				? "- Managed-worktree writer: implement only the requested scope inside the assigned worktree; do not modify the parent checkout or paths outside the worktree."
+				: "- Read-only lane: do not modify project files; report findings with evidence, not edits.",
+			isWorker
+				? "- Report changed files, validation commands/results, residual risks, confidence (low/medium/high), and needsEscalation (true/false)."
+				: "- Report confidence (low/medium/high) and needsEscalation (true/false).",
 			"- A blocker requires command/gate evidence or an exact code path with a reproducible failure; otherwise label it unverified.",
 		].join("\n");
 		const item = {
@@ -31,7 +36,8 @@ export function buildWorkflow(
 			agent: lane.agent,
 			task: `${String(lane.task)}\n\n${qualityContract}`,
 			model: routes[index]!.model,
-			context: lane.context ?? (lane.duty === "oracle" ? "fork" : undefined),
+			context: lane.context ?? (lane.duty === "oracle" || isWorker ? "fork" : undefined),
+			...(isWorker ? { worktree: true } : {}),
 			cwd: lane.cwd ?? defaultCwd,
 			output: lane.output ?? false,
 			...(typeof lane.gate === "string" ? { gate: lane.gate } : {}),
@@ -41,7 +47,8 @@ export function buildWorkflow(
 		waves.set(wave, current);
 	});
 
-	const lines = ["const results = [];"];
+	const workerKeys = lanes.filter((lane) => lane.duty === "worker").map((lane) => lane.key);
+	const lines = ["const results = [];", `const workerKeys = new Set(${escapeForScript(workerKeys)});`];
 	let waveIndex = 0;
 	for (const [, items] of [...waves.entries()].sort(([left], [right]) => left - right)) {
 		waveIndex += 1;
@@ -68,6 +75,6 @@ export function buildWorkflow(
 		lines.push("  results.push(escalation);");
 		lines.push("}");
 	}
-	lines.push("return results.map((result) => result.output);");
+	lines.push("return results.map((result) => workerKeys.has(String(result.key)) ? { output: result.output, artifactPaths: result.artifactPaths, runId: result.runId } : result.output);");
 	return lines.join("\n");
 }

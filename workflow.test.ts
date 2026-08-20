@@ -40,6 +40,56 @@ test("oracle remains a read-only evidence lane", async () => {
 	assert.match(String(child?.task), /confidence/);
 });
 
+test("read-only workflow results remain plain strings", async () => {
+	const script = buildWorkflow([{
+		key: "scout-check",
+		agent: "scout",
+		duty: "scout",
+		task: "Inspect",
+		risk: "low",
+		output: false,
+	}], [{ model: "provider/economy:low" }], "/tmp/project");
+	const result = await compile(script)({
+		all: async () => [{ key: "scout-check", output: "scout result", artifactPaths: ["/tmp/output.md"] }],
+	});
+	assert.deepEqual(result, ["scout result"]);
+});
+
+test("worker uses managed worktree, write contract, fork, gate, and returns handoff artifacts", async () => {
+	let captured: Record<string, unknown> | undefined;
+	const script = buildWorkflow([{
+		key: "worker-impl",
+		agent: "worker",
+		duty: "worker",
+		task: "Create the requested file",
+		risk: "medium",
+		worktree: true,
+		gate: "test -f worker-output.txt",
+		output: false,
+	}], [{ model: "provider/parent:high" }], "/tmp/project");
+	const result = await compile(script)({
+		all: async (items: Array<Record<string, unknown>>) => {
+			captured = items[0];
+			return [{
+				key: "worker-impl",
+				output: "implemented",
+				artifactPaths: ["/tmp/handoff.json"],
+				runId: "worker-run",
+			}];
+		},
+	});
+	assert.equal(captured?.context, "fork");
+	assert.equal(captured?.worktree, true);
+	assert.equal(captured?.gate, "test -f worker-output.txt");
+	assert.match(String(captured?.task), /managed-worktree/i);
+	assert.doesNotMatch(String(captured?.task), /Read-only lane/);
+	assert.deepEqual(result, [{
+		output: "implemented",
+		artifactPaths: ["/tmp/handoff.json"],
+		runId: "worker-run",
+	}]);
+});
+
 test("oracle calibration uses the same default fork context", async () => {
 	let calibration: Record<string, unknown> | undefined;
 	const script = buildWorkflow([{

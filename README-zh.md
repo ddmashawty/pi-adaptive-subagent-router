@@ -8,7 +8,7 @@ Adaptive Subagent Router 是一个面向 [Pi](https://github.com/badlogic/pi-mon
 
 ## 开发者预览
 
-本扩展目前处于开发者预览阶段。随着真实使用数据积累，路由策略和日志格式可能继续变化。它只委派**只读** subagent（scout、reviewer、research、oracle）；所有文件写入由父 agent 自己完成，不由被委派的 lane 执行。
+本扩展目前处于开发者预览阶段。随着真实使用数据积累，路由策略和日志格式可能继续变化。它支持只读的 scout/reviewer/research/oracle lane，以及最多一个运行在 pi-subagents 托管 Git worktree 中的 `worker`。共享 checkout 和非 Git worker 仍不支持。
 
 ## 主要功能
 
@@ -17,6 +17,7 @@ Adaptive Subagent Router 是一个面向 [Pi](https://github.com/badlogic/pi-mon
 - 没有合适低成本模型时，自动降低思考级别作为 fallback。
 - balanced 下保护 reviewer 以及 high/critical 风险任务的父运行时。
 - Oracle 始终保留父模型、优先使用 high thinking，并默认使用 fork 上下文。
+- 单 Worker 路由强制 managed worktree 和 host gate，并保留 patch/handoff 工件。
 - 要求子 agent 报告置信度和 `needsEscalation`。
 - 可选地由父运行时复核低置信度结果。
 - 可选地使用父运行时对第一个只读 lane 进行校准。
@@ -32,16 +33,17 @@ Adaptive Subagent Router 是一个面向 [Pi](https://github.com/badlogic/pi-mon
 - 低风险 `scout` 和 `research` lane 可以使用同 provider 的低成本 reasoning 模型；
 - reviewer 保留父模型和当前思考级别；
 - Oracle 保留父模型、优先使用 high thinking，并默认使用 fork 上下文；
+- Worker 保留父模型、优先使用 high thinking、默认使用 fork，并要求 `worktree:true` 和 gate；
 - high/critical 风险任务保留父运行时；
 - medium-risk 经济路由优先选择较接近的低成本候选，而不是盲目选择最便宜的模型。
 
 ### `economy`
 
-显式成本优先。经济型职责（包括 reviewer）可以使用低成本同 provider 模型；Oracle 是例外，决策一致性咨询始终保留父模型并优先使用 high thinking。经济型职责没有合适候选时，先降低父模型思考级别，最后回退到父运行时。
+显式成本优先。经济型职责（包括 reviewer）可以使用低成本同 provider 模型；Oracle 和 Worker 是例外，两者都保留父模型并优先使用 high thinking。经济型职责没有合适候选时，先降低父模型思考级别，最后回退到父运行时。
 
 ### `strict`
 
-保留父模型和当前思考级别；Oracle 可提升至 high thinking，以满足其咨询契约。适合发布、安全、不可逆操作或明确要求最高质量的任务。
+保留父模型和当前思考级别；Oracle 和 Worker 可提升至 high thinking，以满足各自角色契约。适合发布、安全、不可逆操作或明确要求最高质量的任务。
 
 模型公开成本只是保守代理，不代表模型能力、质量或最终实际花费。
 
@@ -122,7 +124,7 @@ ln -sfn "$PWD/pi-adaptive-subagent-router" ~/.pi/agent/extensions/adaptive-subag
 }
 ```
 
-扩展会把每个 lane 转换为 `pi-subagents` workflow，并为每个子任务写入明确的模型和思考级别。底层直接调用 `subagent` 会被阻止，以避免绕过路由和证据检查。
+扩展会把每个 lane 转换为 `pi-subagents` workflow，并为每个子任务写入明确的模型和思考级别。Agent 名称采用 fail-closed allowlist：`scout`、`reviewer`、`researcher`/`research`、`oracle`/`advisor`、`worker` 及其内置实现别名；自定义 agent 会被拒绝，因为仅凭名称无法证明其实际写权限。底层直接调用 `subagent` 会被阻止，以避免绕过路由和证据检查。
 
 ## 使用日志
 
@@ -146,9 +148,19 @@ $PI_CODING_AGENT_DIR/adaptive-subagent-router/usage.jsonl
 
 ## 限制与安全说明
 
-### 设计上只读
+### 只读 lane 与隔离 Worker
 
-本扩展不委派文件写入。每个 lane 都是只读 subagent（scout、reviewer、research 或 oracle）：它只检查并报告，任何实际修改都由父 agent 自己完成。这从根本上消除了文件 authority 问题——没有 writer lane 需要约束，也就没有可被绕过的 authority 边界。
+Scout、reviewer、research 和 oracle lane 仍然只读。Worker 只有在以下 fail-closed 条件全部满足时才允许启动：
+
+- agent 名称和 duty 必须匹配内置 allowlist；不支持或自定义 agent 在 spawn 前失败；
+- 一个 adaptive workflow 最多一个 Worker；
+- Worker 必须在 clean Git 仓库中使用 `worktree:true`；
+- 调用方必须提供非空 host gate；
+- 该 workflow 不得启用 calibration sampling；
+- Worker 拥有整个 managed worktree，而不是父 checkout 中的路径子集；
+- pi-subagents 捕获 patch 和 handoff manifest，成功捕获后清理临时 worktree/branch，是否应用 patch 由父 agent 决定。
+
+共享 checkout writer、非 Git writer、多 Worker、路径级 authority 和自动应用 patch 均明确不支持。Managed worktree 是工程隔离边界，不是防止外部副作用的操作系统沙箱。
 
 ### 评测范围
 

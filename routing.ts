@@ -2,7 +2,7 @@ export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhi
 export type Complexity = "simple" | "standard" | "complex";
 export type Risk = "low" | "medium" | "high" | "critical";
 export type QualityPolicy = "economy" | "balanced" | "strict";
-export type LaneDuty = "scout" | "reviewer" | "oracle" | "research";
+export type LaneDuty = "scout" | "reviewer" | "oracle" | "worker" | "research";
 export type RouteStrategy = "lower-cost" | "same-model-lower-thinking" | "same-model";
 
 export type RuntimeModel = {
@@ -57,19 +57,22 @@ export function supportsThinking(model: RuntimeModel, level: ThinkingLevel): boo
 }
 
 export function inferDuty(agent: string, explicit?: LaneDuty): LaneDuty {
-	const normalized = agent.toLowerCase();
-	const isOracle = normalized === "oracle" || normalized === "advisor";
-	if (explicit === "oracle" && !isOracle) {
-		throw new Error(`Oracle duty requires the oracle agent or advisor alias, not "${agent}".`);
+	const trimmed = agent.trim();
+	if (trimmed !== agent) throw new Error(`Unsupported adaptive agent "${agent}": surrounding whitespace is not allowed.`);
+	const normalized = trimmed.toLowerCase();
+	let inferred: LaneDuty | undefined;
+	if (normalized === "scout") inferred = "scout";
+	else if (normalized === "reviewer") inferred = "reviewer";
+	else if (normalized === "researcher" || normalized === "research") inferred = "research";
+	else if (normalized === "oracle" || normalized === "advisor") inferred = "oracle";
+	else if (["worker", "developer", "coder", "implementer", "develop"].includes(normalized)) inferred = "worker";
+	if (!inferred) {
+		throw new Error(`Unsupported adaptive agent "${agent}". Allowed agents: scout, reviewer, researcher, oracle/advisor, worker and worker aliases.`);
 	}
-	if (isOracle && explicit && explicit !== "oracle") {
-		throw new Error(`Agent "${agent}" must use oracle duty, not "${explicit}".`);
+	if (explicit && explicit !== inferred) {
+		throw new Error(`Adaptive duty "${explicit}" does not match agent "${agent}" (expected "${inferred}").`);
 	}
-	if (isOracle) return "oracle";
-	if (explicit) return explicit;
-	if (normalized.includes("review")) return "reviewer";
-	if (normalized.includes("scout")) return "scout";
-	return "research";
+	return inferred;
 }
 
 function selectLowerThinking(model: RuntimeModel, parentThinking: ThinkingLevel, complexity: Complexity): ThinkingLevel | undefined {
@@ -117,20 +120,21 @@ export function selectRoute(
 	const parentRank = thinkingRank(parentThinking);
 	if (parentRank < 0) return undefined;
 	const candidates = lowerCostCandidates(parent, models, request.minContextWindow);
-	if (request.duty === "oracle") {
+	if (request.duty === "oracle" || request.duty === "worker") {
 		if (parent.contextWindow < request.minContextWindow) return undefined;
 		const highThinking = thinkingRank(parentThinking) >= thinkingRank("high")
 			? parentThinking
 			: supportsThinking(parent, "high") ? "high" : parentThinking;
+		const isOracle = request.duty === "oracle";
 		return {
 			model: parent,
 			thinking: highThinking,
 			strategy: "same-model",
 			reason: [
-				"oracle decision-consistency priority",
-				"preserve parent model for inherited-context consultation",
+				isOracle ? "oracle decision-consistency priority" : "worker implementation safety priority",
+				isOracle ? "preserve parent model for inherited-context consultation" : "preserve parent model for managed-worktree implementation",
 				highThinking === "high" && parentThinking !== "high"
-					? "raise oracle thinking to high"
+					? `raise ${request.duty} thinking to high`
 					: highThinking === parentThinking && thinkingRank(parentThinking) < thinkingRank("high")
 						? "high thinking unsupported; preserve parent thinking"
 						: `preserve parent thinking ${parentThinking}`,

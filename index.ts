@@ -57,13 +57,14 @@ async function rpcSpawn(pi: ExtensionAPI, params: Record<string, unknown>): Prom
 
 const laneSchema = Type.Object({
 	key: Type.String({ minLength: 1, description: "Stable lane key." }),
-	agent: Type.String({ minLength: 1, description: "Subagent role, for example scout, reviewer, researcher, or oracle." }),
+	agent: Type.String({ minLength: 1, description: "Subagent role, for example scout, reviewer, researcher, oracle, or worker." }),
 	task: Type.String({ minLength: 1, description: "Narrow task contract for this lane." }),
-	duty: Type.Optional(Type.String({ enum: ["scout", "reviewer", "oracle", "research"], description: "Routing duty. Defaults from the agent name." })),
+	duty: Type.Optional(Type.String({ enum: ["scout", "reviewer", "oracle", "worker", "research"], description: "Routing duty. Defaults from the agent name." })),
 	risk: Type.Optional(Type.String({ enum: ["low", "medium", "high", "critical"], description: "Lane-specific risk override." })),
 	gate: Type.Optional(Type.String({ minLength: 1, description: "Host verification command. Required for critical reviewer lanes." })),
 	wave: Type.Optional(Type.Integer({ minimum: 1, maximum: 99, description: "Waves 1-99 run serially; lanes in one wave run in parallel." })),
 	context: Type.Optional(Type.String({ enum: ["fresh", "fork"] })),
+	worktree: Type.Optional(Type.Boolean({ description: "Required for the single worker lane; runs it in a managed Git worktree." })),
 	cwd: Type.Optional(Type.String({ minLength: 1, description: "Lane working directory; defaults to the parent cwd." })),
 	output: Type.Optional(Type.Unsafe({ anyOf: [{ type: "string", minLength: 1 }, { type: "boolean", enum: [false] }], description: "Unique output path, or false. Defaults to false to prevent agent-default path collisions." })),
 });
@@ -89,7 +90,7 @@ export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
 		if (!parent || !thinking) return;
 		const candidates = candidateSummary(parent, ctx.modelRegistry.getAvailable() as RuntimeModel[]);
 		return {
-			systemPrompt: `${event.systemPrompt}\n\n## Adaptive subagent routing (enforced)\nBefore delegating, state a concise decision covering independent value, complexity, risk, quality policy, lane duties, and evidence/gates. Do not reveal private chain-of-thought.\n\nParent runtime: ${parent.provider}/${parent.id}:${thinking}. Same-provider lower-cost candidates: ${candidates}. Default to qualityPolicy=balanced: economical routing is allowed for low-risk scout/research lanes, but every reviewer, oracle, and high/critical risk lane preserves the parent runtime. Oracle always keeps the parent model, prefers high thinking, and defaults to fork context. Use economy only when cost is the explicit priority; use strict for release, security, irreversible, or user-designated quality gates. Never cross providers automatically.\n\nReviewer findings must distinguish verified evidence from static suspicion. Critical reviewer lanes require a gate command. For execution, call adaptive_subagent_launch, not subagent directly.`
+			systemPrompt: `${event.systemPrompt}\n\n## Adaptive subagent routing (enforced)\nBefore delegating, state a concise decision covering independent value, complexity, risk, quality policy, lane duties, and evidence/gates. Do not reveal private chain-of-thought.\n\nParent runtime: ${parent.provider}/${parent.id}:${thinking}. Same-provider lower-cost candidates: ${candidates}. Default to qualityPolicy=balanced: economical routing is allowed for low-risk scout/research lanes, but every reviewer, oracle, worker, and high/critical risk lane preserves the parent runtime. Oracle always keeps the parent model, prefers high thinking, and defaults to fork context. Worker always keeps the parent model, prefers high thinking, defaults to fork, and requires one managed worktree plus a gate. Use economy only when cost is the explicit priority; use strict for release, security, irreversible, or user-designated quality gates. Never cross providers automatically.\n\nReviewer findings must distinguish verified evidence from static suspicion. Critical reviewer lanes require a gate command. For execution, call adaptive_subagent_launch, not subagent directly.`
 		};
 	});
 
@@ -106,7 +107,7 @@ export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "adaptive_subagent_launch",
 		label: "Adaptive Subagent Launch",
-		description: "Launch a risk-aware dynamically routed read-only workflow. Balances task complexity, risk, lane duty, evidence gates, quality policy, and cost.",
+		description: "Launch a risk-aware dynamically routed workflow for read-only lanes or one managed-worktree worker. Balances task complexity, risk, lane duty, evidence gates, quality policy, and cost.",
 		parameters: Type.Object({
 			decision: Type.String({ minLength: 12, description: "Concise routing decision covering delegation value, risk/quality choice, lane count, and evidence plan." }),
 			complexity: Type.String({ enum: ["simple", "standard", "complex"] }),
@@ -124,13 +125,17 @@ export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
 			if (params.lanes.length > LANE_LIMIT[params.complexity]) {
 				throw new Error(`${params.complexity} work permits at most ${LANE_LIMIT[params.complexity]} lane(s); split the work into serial phases instead.`);
 			}
-			validateLanes(params.lanes);
+			const lanesWithDuties = params.lanes.map((lane) => ({
+				...lane,
+				duty: inferDuty(lane.agent, lane.duty as LaneDuty | undefined),
+			}));
+			validateLanes(lanesWithDuties, params.calibrationSample ?? false);
 
 			const defaultRisk = (params.risk ?? "medium") as Risk;
 			const qualityPolicy = (params.qualityPolicy ?? "balanced") as QualityPolicy;
 			const models = ctx.modelRegistry.getAvailable() as RuntimeModel[];
-			const routes = params.lanes.map((lane) => {
-				const duty = inferDuty(lane.agent, lane.duty as LaneDuty | undefined);
+			const routes = lanesWithDuties.map((lane) => {
+				const duty = lane.duty;
 				const risk = (lane.risk ?? defaultRisk) as Risk;
 				if (risk === "critical" && duty === "reviewer" && !lane.gate) {
 					throw new Error(`Critical reviewer lane "${lane.key}" requires a gate command.`);
@@ -156,7 +161,7 @@ export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
 					eligibleLowerCost: selected.eligibleLowerCost,
 				};
 			});
-			const normalizedLanes = params.lanes.map((lane, index) => ({
+			const normalizedLanes = lanesWithDuties.map((lane, index) => ({
 				...lane,
 				risk: routes[index]!.risk,
 				duty: routes[index]!.duty,

@@ -8,7 +8,7 @@ It keeps the parent agent in control while adding a runtime policy layer that re
 
 ## Developer preview
 
-This extension is currently in developer preview. Routing policy and log formats may change as real usage provides more evidence. It delegates **read-only** subagent work only (scout, reviewer, research, and oracle); all file writes are performed by the parent agent, not by delegated lanes.
+This extension is currently in developer preview. Routing policy and log formats may change as real usage provides more evidence. It supports read-only scout/reviewer/research/oracle lanes plus at most one `worker` running in a pi-subagents managed Git worktree. Shared-checkout and non-Git workers remain unsupported.
 
 ## Features
 
@@ -17,6 +17,7 @@ This extension is currently in developer preview. Routing policy and log formats
 - Lower thinking-level fallback when no eligible lower-cost model exists.
 - Parent-runtime protection for balanced reviewers and high/critical-risk work.
 - Oracle routing that always preserves the parent model, prefers high thinking, and defaults to fork context.
+- Single-worker routing that requires managed worktree isolation and a host-run gate, while preserving patch/handoff artifacts.
 - Evidence contracts requiring confidence and `needsEscalation` reporting.
 - Optional parent-runtime escalation for low-confidence results.
 - Optional read-only calibration against the parent runtime.
@@ -32,16 +33,17 @@ This extension is currently in developer preview. Routing policy and log formats
 - Low-risk `scout` and `research` lanes may use a lower-cost same-provider reasoning model.
 - Reviewers preserve the parent model and current thinking level.
 - Oracle preserves the parent model, prefers high thinking, and defaults to fork context.
+- Worker preserves the parent model, prefers high thinking, defaults to fork context, and requires `worktree:true` plus a gate.
 - High- and critical-risk lanes preserve the parent runtime.
 - Medium-risk economical routing prefers a closer lower-cost candidate instead of blindly selecting the cheapest one.
 
 ### `economy`
 
-Explicit cost-first routing. Lower-cost same-provider models may be used for economical duties, including reviewers. Oracle is the exception: decision-consistency consultations always preserve the parent model and prefer high thinking. If no eligible candidate exists for an economical duty, the router lowers the parent thinking level and finally falls back to the parent runtime.
+Explicit cost-first routing. Lower-cost same-provider models may be used for economical duties, including reviewers. Oracle and worker are exceptions: both preserve the parent model and prefer high thinking. If no eligible candidate exists for an economical duty, the router lowers the parent thinking level and finally falls back to the parent runtime.
 
 ### `strict`
 
-Preserves the parent model and current thinking level; Oracle may raise thinking to high to honor its advisory contract. Use strict for release, security, irreversible, or explicitly quality-critical work.
+Preserves the parent model and current thinking level; Oracle and worker may raise thinking to high to honor their role contracts. Use strict for release, security, irreversible, or explicitly quality-critical work.
 
 Published model cost is only a conservative proxy; it is not a provider-neutral measure of intelligence, quality, or total spend.
 
@@ -122,7 +124,7 @@ A conceptual call looks like this:
 }
 ```
 
-The extension converts each lane into a `pi-subagents` workflow with an explicit model and thinking level. Direct execution calls to the underlying `subagent` tool are blocked so routing and evidence checks cannot be bypassed.
+The extension converts each lane into a `pi-subagents` workflow with an explicit model and thinking level. Agent names are fail-closed to `scout`, `reviewer`, `researcher`/`research`, `oracle`/`advisor`, and `worker` plus its builtin implementation aliases; custom agents are rejected because their effective write capabilities are not proven by a name. Direct execution calls to the underlying `subagent` tool are blocked so routing and evidence checks cannot be bypassed.
 
 ## Usage logging
 
@@ -146,9 +148,19 @@ Logging failures are reported to stderr but never block routing.
 
 ## Limitations and safety
 
-### Read-only by design
+### Read-only lanes and isolated worker
 
-This extension does not delegate file writes. Every lane is a read-only subagent (scout, reviewer, research, or oracle): it inspects and reports, and the parent agent applies any changes itself. This removes the file-authority problem entirely — there is no writer lane to constrain, so there is no authority boundary to bypass.
+Scout, reviewer, research, and oracle lanes remain read-only. A worker lane is allowed only when all of these fail-closed conditions hold:
+
+- agent names and duties match the built-in allowlist; unsupported/custom agents fail before spawn;
+- at most one worker exists in the adaptive workflow;
+- the worker uses `worktree:true` in a clean Git repository;
+- the caller supplies a non-empty host-run gate;
+- calibration sampling is disabled for that workflow;
+- the worker owns the whole managed worktree, never a path subset of the parent checkout;
+- pi-subagents captures the patch and handoff manifest, removes the temporary worktree/branch after successful capture, and leaves patch application to the parent.
+
+Shared-checkout writers, non-Git writers, multiple workers, path-level authority, and automatic patch application are intentionally unsupported. Managed worktree isolation is an engineering boundary, not an operating-system sandbox against external side effects.
 
 ### Evaluation scope
 
