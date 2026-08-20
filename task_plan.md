@@ -13,6 +13,9 @@
 - [complete] 7. 抽取纯路由/工作流/隔离校验核心并建立自动回归矩阵；完成新 Pi 进程加载与端到端验证。
 - [complete] 8. 独立高风险同级复审、问题闭环、文档同步与提交。
 - [complete] 9. 调查并修复带 gate 的父模型 provider/cache 兼容性残余风险。
+- [complete] 10. 将 balanced reviewer 统一固定在父模型与当前思考级别，补充低风险 reviewer 回归。
+- [complete] 11. 增加可重复的 adaptive-vs-static 离线路由基准与结果判定工具，先验证策略差异再决定是否进行 live A/B。
+- [pending] 12. 若进入 live A/B，使用固定任务/seed/预算记录实际 token、成本、延迟、质量和安全事件；离线基准不得替代真实质量结论。
 
 ## 决策
 - 使用 `~/.pi/agent/extensions/adaptive-subagent-router/`，因此自动作用于所有项目。
@@ -21,7 +24,7 @@
 - 无低成本候选时，先在父模型上选择低于当前值的思考强度；若父模型已无法降档，则复用父模型和当前思考强度，避免无谓拒绝委派。
 - 对不同模型仍依据目标模型支持的 level 映射选择；正常降级路径保持低于主 agent，最终同模型兜底是显式例外。
 - 同一 worktree 默认单 writer；多个 writer 仅在显式 worktree 隔离时允许。
-- 默认质量策略为 balanced：低风险 scout 优先经济路由；高/关键风险、关键 reviewer/write lane 保留父模型同级路径。
+- 默认质量策略为 balanced：低风险 scout/research 可经济路由；所有 reviewer、高/关键风险和中风险 writer 保留父模型；economy 才允许 reviewer 降级。
 - strict 明确复用父模型当前思考级别；economy 保持既有成本优先行为。
 - blocker 必须有命令/gate 或精确代码证据；高风险 reviewer 可强制 gate，避免静态猜测被包装成已验证结论。
 
@@ -32,6 +35,7 @@
 - extension 能被 Pi 加载且不影响普通非 subagent 任务。
 - 无低成本候选时，`max/high/...` 能降到合适档位并复用父模型；`off/minimal` 等无法降档时仍能复用父模型，不再直接失败。
 - 本地 mock provider 端到端验证：无低成本候选时实际启动 `mock/parent:low`，请求思考参数从 `max` 降为 `low`。
-- 风险矩阵回归：balanced 的高/关键风险和中风险 reviewer/writer 保留父运行时；economy/strict 行为明确且可测。
+- 风险矩阵回归：balanced 的所有 reviewer、高/关键风险和中风险 writer 保留父运行时；economy/strict 行为明确且可测。
 - 工作流回归：JSON 置信度触发升级、A/B calibration、wave 安全生成、writer authority Git gate、重复 key/output 与重叠 authority 拒绝。
 - 新 Pi 进程端到端：高风险 reviewer 实际路由 `parent:medium`；低风险 economy scout 实际路由低成本模型并在低置信度时追加父模型 escalation。
+- A/B 基准暂以纯路由决策为第一阶段；live A/B 必须固定任务、seed、预算并记录实际成本、延迟、质量和安全事件。

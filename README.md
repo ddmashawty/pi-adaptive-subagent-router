@@ -11,8 +11,9 @@ The router reads the active parent runtime and current model catalogue on every 
 - `balanced` (default):
   - low-risk scout/research lanes may use a lower-cost same-provider reasoning model;
   - medium-risk economical routes choose the closest lower-cost candidate rather than the cheapest;
-  - medium-risk reviewer/writer lanes and all high/critical lanes preserve the parent model and thinking level.
-- `economy`: preserves the original cost-first behavior: lower-cost model → parent model with lower thinking → parent runtime fallback.
+  - every reviewer lane and all high/critical lanes preserve the parent model and thinking level;
+  - medium-risk writer lanes preserve the parent model and thinking level.
+- `economy`: explicit cost-first behavior for every duty, including reviewers: lower-cost model → parent model with lower thinking → parent runtime fallback.
 - `strict`: always preserves the parent model and current thinking level. Use for release, security, irreversible operations, or explicit quality gates.
 
 Cost remains a conservative proxy, not a provider-neutral intelligence score.
@@ -67,10 +68,13 @@ The tool returns a structured explanation for every lane: selected model/thinkin
 ## Verification
 
 ```bash
-node --experimental-strip-types --test routing.test.ts workflow.test.ts validation.test.ts
-node --experimental-strip-types --check index.ts routing.ts workflow.ts validation.ts
+node --experimental-strip-types --test routing.test.ts workflow.test.ts validation.test.ts cacheCompatibility.test.ts benchmark.test.ts
+node --experimental-strip-types --check index.ts routing.ts workflow.ts validation.ts benchmark.ts
+node --experimental-strip-types benchmark.ts
 pi --list-models
 ```
+
+The benchmark command is an offline policy comparison only: it compares adaptive routing with a static parent-runtime baseline and reports published model-cost deltas. It does not measure child quality, actual token spend, or latency; those require a paired live A/B harness.
 
 End-to-end checks should use a new Pi process so it loads the changed extension. Verify at least:
 

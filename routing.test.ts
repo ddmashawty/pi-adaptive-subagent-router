@@ -42,11 +42,13 @@ test("balanced medium risk favors the closer lower-cost model", () => {
 	assert.equal(selected?.model.id, "closer");
 });
 
-test("balanced preserves parent capability for risky reviewers and writers", () => {
+test("balanced preserves parent capability for every reviewer and protected lane", () => {
 	for (const request of [
+		{ risk: "low" as const, duty: "reviewer" as const },
 		{ risk: "medium" as const, duty: "reviewer" as const },
 		{ risk: "medium" as const, role: "write" as const, duty: "worker" as const },
 		{ risk: "high" as const, duty: "scout" as const },
+		{ risk: "critical" as const, duty: "reviewer" as const },
 	]) {
 		const selected = route(request);
 		assert.equal(selected?.strategy, "same-model");

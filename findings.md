@@ -33,3 +33,12 @@
 - 历史新 Pi 进程实测 Sol parent + gated reviewer：移除 prompt-cache 字段后 child 成功完成模型请求并产生输出；本次合成任务因未提供完整 acceptance-report 被 acceptance 拒绝，但不再出现 provider cache 错误。该测试证明防护不阻断请求，不宣称已证明 provider 错误可稳定复现。
 - 最终抽取为 `cacheCompatibility.ts` 后，真实 Pi `reviewer` child（`openai-codex/gpt-5.6-luna:max`）完成了当前扩展的 gated acceptance；host gate 通过 17 项测试、`index.ts` 语法检查及 `pi --list-models`，acceptance status/evidence 均为 `verified`。
 - 明确代价：child 可能少用 prompt cache；这是为避免高风险 reviewer 在产生任何证据前被 provider 拒绝的可靠性取舍。
+
+## 用户决策与后续评测（本轮）
+
+- 用户明确要求 review 优先保证模型智慧程度，因此 `balanced` 下 reviewer 不应因低风险声明而自动降级；只有显式 `economy` 才允许 reviewer 走成本优先路径。
+- 评测先实现离线路由 A/B：固定同一模型目录和任务元数据，比较 adaptive 选择与静态父模型/固定低成本基线的路由差异、保护规则和理论成本；不把离线差异冒充质量收益。
+- live A/B 的必要字段：task/seed/condition、最终路由、实际 token/成本/延迟、正确性、证据等级、gate/authority 事件、escalation/calibration 触发及失败原因。
+- 建议验收：质量不下降，且成本或延迟至少下降 15%；任何 reviewer 质量或 writer 安全回归都判失败。
+- 审查发现并已修正：`index.ts` 的注入提示曾遗漏 low-risk reviewer；离线 fixture 曾只覆盖 low/medium reviewer，现已补齐 high/critical。
+- 调试记录：首次 benchmark 断言把非 economy reviewer 数量误写为 3，实际 fixture 当时只有 2；依据测试输出确认是断言/fixture 不一致，随后扩展 fixture 到四种 reviewer 风险并更新期望值。

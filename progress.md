@@ -47,3 +47,10 @@
 - [x] 历史新 Pi 进程验证防护后的 Sol parent + gated reviewer 可完成模型请求；合成 acceptance 报告不完整导致 acceptance reject，已与 provider 请求成功区分记录。
 - [x] 最终抽取模块经真实 Pi Luna reviewer + gated acceptance 验证；host gate 的 17 项测试、语法检查和 `pi --list-models` 均通过，acceptance status/evidence 为 `verified`。
 - [x] 移除不适用的裸 Node `index.test.ts`：扩展的 `typebox` 依赖由 Pi 运行时解析，直接从扩展目录导入会产生环境性 `ERR_MODULE_NOT_FOUND`；hook 行为由纯函数回归测试和真实 Pi 集成 gate 覆盖。
+
+## 2026-08-20 review 优先与 A/B 基准
+
+- [x] 用户确认 review 任务优先保证模型智慧程度；balanced reviewer 将统一保留父模型与当前思考级别，economy 保留为显式成本优先例外。
+- [x] 补充 low/medium/high/critical reviewer 路由回归与离线 adaptive-vs-static 基准。
+- [x] 运行 20 项全量测试、源文件 strip-types 检查、benchmark CLI 和 Pi 加载 smoke test。
+- [x] 只读 reviewer 复核：无 blocker/major；修正 system prompt 文案遗漏和 reviewer 风险覆盖缺口；reviewer 无 shell 权限，最终 gate 由父会话执行。

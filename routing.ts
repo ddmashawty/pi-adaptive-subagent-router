@@ -90,7 +90,7 @@ function shouldPreserveParent(request: RouteRequest): string | undefined {
 	if (request.qualityPolicy === "strict") return "strict quality policy";
 	if (request.qualityPolicy === "economy") return undefined;
 	if (RISK_RANK[request.risk] >= RISK_RANK.high) return `${request.risk} risk`;
-	if (request.risk === "medium" && request.duty === "reviewer") return "medium-risk reviewer";
+	if (request.duty === "reviewer") return "reviewer quality priority";
 	if (request.risk === "medium" && request.role === "write") return "medium-risk writer";
 	return undefined;
 }
