@@ -43,6 +43,18 @@ Adaptive Subagent Router 是一个面向 [Pi](https://github.com/badlogic/pi-mon
 
 模型公开成本只是保守代理，不代表模型能力、质量或最终实际花费。
 
+## 依赖
+
+本扩展将执行委派给 **pi-subagents**（Pi 的 subagent 运行时）。它通过 pi-subagents 的 `subagents:rpc:v1` 事件桥 spawn 每个 workflow，因此必须先安装并加载 pi-subagents。
+
+作为 Pi 包安装：
+
+```sh
+pi install npm:pi-subagents
+```
+
+这会把 `npm:pi-subagents` 写入 `~/.pi/agent/settings.json` 的 `packages` 数组。如果 pi-subagents 未加载，`adaptive_subagent_launch` 会在 5 秒后超时并报 "Timed out waiting for pi-subagents RPC. Ensure the pi-subagents package is loaded."。
+
 ## 安装
 
 扩展设计为 Pi 全局自动发现：

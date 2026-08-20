@@ -43,6 +43,18 @@ Always preserves the parent model and current thinking level. Use it for release
 
 Published model cost is only a conservative proxy; it is not a provider-neutral measure of intelligence, quality, or total spend.
 
+## Dependencies
+
+This extension delegates execution to **pi-subagents**, Pi's subagent runtime. It spawns each workflow through pi-subagents' `subagents:rpc:v1` event bridge, so pi-subagents must be installed and loaded first.
+
+Install it as a Pi package:
+
+```sh
+pi install npm:pi-subagents
+```
+
+This adds `npm:pi-subagents` to the `packages` array in `~/.pi/agent/settings.json`. If pi-subagents is not loaded, `adaptive_subagent_launch` times out after five seconds with "Timed out waiting for pi-subagents RPC. Ensure the pi-subagents package is loaded.".
+
 ## Installation
 
 The extension is designed for Pi global auto-discovery:
