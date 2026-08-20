@@ -24,3 +24,12 @@
 - escalation reviewer 保留仓库工具并使用 turnBudget；如果完全阻断工具，就无法真正复核代码证据。
 - 新 Pi 端到端证明：高风险 balanced reviewer 路由到父 `medium`；低风险 economy scout 路由到低成本模型，输出低置信度后自动追加父模型 reviewer。
 - 一次带 gate 的同父模型 reviewer 子进程因 provider 返回 `prompt_cache_retention is not supported on this model` 而无输出；相同路由不带 gate 随后成功。该现象属于 pi-subagents/provider 组合的残余兼容风险，路由器本身已保留结构化失败结果。
+
+## Provider/cache 兼容性闭环（2026-08-20）
+
+- 已读取失败 artifact：child 在首个模型请求前失败（`toolCount=0`、usage 全 0），且 acceptance `verifyRuns=[]`，所以不是 gate shell 命令的失败。
+- provider 边界诊断确认当前 Pi 0.84.2 的 `openai-codex-responses` child payload 不含 `prompt_cache_retention`，但含 `prompt_cache_key`；因此旧错误不能被静态归因于当前 gate 命令，保守分类为 provider 对可选 prompt-cache 参数的兼容/间歇性失败。
+- 当前扩展新增 child-only payload 防护：同时移除 `prompt_cache_key` 与 `prompt_cache_retention`，不修改父会话请求，也不原地修改 payload；父模型/子模型/普通 provider 字段保持不变。
+- 历史新 Pi 进程实测 Sol parent + gated reviewer：移除 prompt-cache 字段后 child 成功完成模型请求并产生输出；本次合成任务因未提供完整 acceptance-report 被 acceptance 拒绝，但不再出现 provider cache 错误。该测试证明防护不阻断请求，不宣称已证明 provider 错误可稳定复现。
+- 最终抽取为 `cacheCompatibility.ts` 后，真实 Pi `reviewer` child（`openai-codex/gpt-5.6-luna:max`）完成了当前扩展的 gated acceptance；host gate 通过 17 项测试、`index.ts` 语法检查及 `pi --list-models`，acceptance status/evidence 均为 `verified`。
+- 明确代价：child 可能少用 prompt cache；这是为避免高风险 reviewer 在产生任何证据前被 provider 拒绝的可靠性取舍。

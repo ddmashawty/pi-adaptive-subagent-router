@@ -12,6 +12,7 @@
 - [complete] 6. 风险感知路由升级：加入 risk、qualityPolicy、角色策略、证据/gate 约束与结构化路由解释。
 - [complete] 7. 抽取纯路由/工作流/隔离校验核心并建立自动回归矩阵；完成新 Pi 进程加载与端到端验证。
 - [complete] 8. 独立高风险同级复审、问题闭环、文档同步与提交。
+- [complete] 9. 调查并修复带 gate 的父模型 provider/cache 兼容性残余风险。
 
 ## 决策
 - 使用 `~/.pi/agent/extensions/adaptive-subagent-router/`，因此自动作用于所有项目。

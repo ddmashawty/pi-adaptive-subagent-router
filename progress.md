@@ -35,3 +35,15 @@
 - [!] 独立同级 reviewer 首轮发现 4 项 major：JSON 引号触发遗漏、wave 标识符注入、escalation 工具能力表述、writer authority 未实际 gate；逐项修复并补测试。
 - [!] 一次带 gate 的同父模型 reviewer 因 `prompt_cache_retention` provider 兼容错误无输出；不带 gate 重试成功，记录为外部残余风险。
 - [x] 最终验证：15 项测试、4 个源文件 strip-types 语法检查、Pi auto-discovery `--list-models` 全通过。
+
+## 2026-08-20 provider/cache 兼容性调查
+
+- [x] 从 `/tmp/pi-subagents-uid-1000/artifacts/643ff2ba-8c76-43e6-97d0-2a38c39aaf48_reviewer_0_meta.json` 确认失败边界：父模型 `openai-codex/gpt-5.6-sol:medium`，首次请求即失败，`toolCount=0`、usage 全 0，错误为 `Codex error: prompt_cache_retention is not supported on this model`。
+- [x] 对比 pi-subagents 源码确认 `gate` 先转为 explicit verified acceptance，并把 acceptance prompt 追加到 child task；验证命令尚未执行时 child 已失败。
+- [x] 对比当前 `@earendil-works/pi-ai`：`openai-codex-responses` 请求构造不包含 `prompt_cache_retention`，而通用 `openai-responses` 会按 cache retention 构造该字段；实际 child provider/API 仍需边界诊断确认。
+- [x] 记录 gated 与 non-gated child 的 provider payload 元数据并形成单一根因假设：当前 Codex child 的可见 payload 只有 `prompt_cache_key`，旧 `prompt_cache_retention` 错误归类为 provider/cache 兼容风险，不能归因于 gate shell。
+- [x] 新增 child-only prompt-cache payload 防护，移除 `prompt_cache_key`/`prompt_cache_retention`，保留父会话缓存行为。
+- [x] 新增纯函数回归测试，覆盖非原地修改、父 payload 隔离、无关 payload 和非对象 payload。
+- [x] 历史新 Pi 进程验证防护后的 Sol parent + gated reviewer 可完成模型请求；合成 acceptance 报告不完整导致 acceptance reject，已与 provider 请求成功区分记录。
+- [x] 最终抽取模块经真实 Pi Luna reviewer + gated acceptance 验证；host gate 的 17 项测试、语法检查和 `pi --list-models` 均通过，acceptance status/evidence 为 `verified`。
+- [x] 移除不适用的裸 Node `index.test.ts`：扩展的 `typebox` 依赖由 Pi 运行时解析，直接从扩展目录导入会产生环境性 `ERR_MODULE_NOT_FOUND`；hook 行为由纯函数回归测试和真实 Pi 集成 gate 覆盖。

@@ -14,6 +14,7 @@ import {
 	type ThinkingLevel,
 } from "./routing.ts";
 import { validateLaneIsolation } from "./validation.ts";
+import { stripSubagentPromptCacheFields } from "./cacheCompatibility.ts";
 import { buildWorkflow } from "./workflow.ts";
 
 const LANE_LIMIT: Record<Complexity, number> = { simple: 1, standard: 2, complex: 3 };
@@ -77,6 +78,10 @@ function inferDuty(agent: string, role: "read" | "write", explicit?: LaneDuty): 
 }
 
 export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
+	pi.on("before_provider_request", (event) => {
+		if (process.env.PI_SUBAGENT_CHILD !== "1") return;
+		return stripSubagentPromptCacheFields(event.payload, true);
+	});
 	pi.on("before_agent_start", (event, ctx) => {
 		const parent = ctx.model as RuntimeModel;
 		const thinking = ctx.thinkingLevel as ThinkingLevel;

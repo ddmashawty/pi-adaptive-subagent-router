@@ -17,6 +17,10 @@ The router reads the active parent runtime and current model catalogue on every 
 
 Cost remains a conservative proxy, not a provider-neutral intelligence score.
 
+### Child provider compatibility
+
+Subagent child requests defensively omit optional `prompt_cache_key` and `prompt_cache_retention` fields. This avoids the observed provider/model compatibility failure before a child can produce output; the parent session's cache behavior is unchanged. Depending on the provider, child runs may use a default or uncached path and may receive fewer prompt-cache hits.
+
 ### Role, evidence, and escalation
 
 Each lane declares `role` (`read|write`) and may declare `duty` (`scout|reviewer|worker|research`) plus a lane-specific `risk`.
