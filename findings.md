@@ -13,3 +13,14 @@
 - 新策略按顺序尝试：低成本同 provider 模型 → 父模型的较低思考强度 → 父模型与当前思考强度。
 - 最后一种是明确的同模型兜底，只在没有可用更低思考档位时使用；不自动跨 provider。
 - `minContextWindow` 只应约束最终选中的模型：低成本候选满足上下文要求时，即使父模型上下文更小，也应优先使用该候选；只有复用父模型时才检查父模型上下文。
+
+## 风险感知升级（2026-08-19）
+
+- 仅按 complexity+cost 会错误降级“代码量小但后果高”的任务；默认 balanced 现按 risk+duty+role 决定是否保留父运行时。
+- 三档策略：economy 明确成本优先；balanced 对低风险 scout/research 经济路由、对中风险 reviewer/writer 和高/关键风险保留父运行时；strict 始终保留父模型与思考级别。
+- 自动升级必须兼容自然文本和 JSON（如 `{"confidence":"low"}`）；工作流正则已覆盖引号形式，并有可执行工作流测试。
+- wave 值不能直接拼进 JavaScript 标识符；现改用顺序 `waveResultN`，公共 schema 同时限制 1–99。
+- “writer authority” 仅声明不够：现要求相对路径前缀、拒绝跨 lane 等同/嵌套范围，并自动组合 Git host gate，检查 tracked/untracked 变更是否越界。
+- escalation reviewer 保留仓库工具并使用 turnBudget；如果完全阻断工具，就无法真正复核代码证据。
+- 新 Pi 端到端证明：高风险 balanced reviewer 路由到父 `medium`；低风险 economy scout 路由到低成本模型，输出低置信度后自动追加父模型 reviewer。
+- 一次带 gate 的同父模型 reviewer 子进程因 provider 返回 `prompt_cache_retention is not supported on this model` 而无输出；相同路由不带 gate 随后成功。该现象属于 pi-subagents/provider 组合的残余兼容风险，路由器本身已保留结构化失败结果。

@@ -19,3 +19,19 @@
 - 回归脚本第一次对“候选模型所有档位禁用”的预期写错：`off` 是统一可用的关闭思考档，因此该候选仍可合法以 `off` 路由；将测试改为接受该低成本降档结果。
 - 已完成 `index.ts` 与 README 更新：低成本候选优先，其次父模型降思考，最后同模型同思考兜底；`minContextWindow` 只约束最终选中的模型。
 - 验证通过：strip-types 语法检查、mock 路由回归、mock Pi RPC 端到端、Pi auto-discovery 和显式加载 smoke test。
+
+## 2026-08-19 风险感知路由升级
+
+- [x] 为全局 extension 初始化 Git 仓库并提交原始基线，保证可回滚。
+- [x] 新增 `risk`、lane risk override、`duty` 与 `qualityPolicy=economy|balanced|strict`。
+- [x] balanced 默认策略落地：低风险侦察可降级；中风险 reviewer/writer、高/关键风险保留父模型当前思考级别。
+- [x] 每 lane 独立路由并返回结构化 reason、strategy、eligibleLowerCost、risk/duty/policy。
+- [x] critical reviewer 强制 gate；所有 child 注入 confidence/needsEscalation 与 blocker 证据契约。
+- [x] 自动 escalation：低置信度/needsEscalation 报告由父运行时复核；新增 turn budget。可选 calibrationSample 对首个只读 lane 运行父模型 A/B 对照。
+- [x] 输出/隔离加固：唯一 lane key/output、writer 必填相对 authority、多 writer worktree、authority 重叠拒绝、自动 Git 越界 gate。
+- [x] 抽取 `routing.ts`、`workflow.ts`、`validation.ts`，新增 15 项 Node strip-types 回归。
+- [x] 初次端到端：高风险 balanced reviewer 实际选择父 `gpt-5.6-sol:medium`；低风险 economy scout 实际选择 `gpt-5.6-luna:minimal`。
+- [x] 自动升级端到端：低置信度 scout 后追加父模型 reviewer，workflow 共 2 个 child run。
+- [!] 独立同级 reviewer 首轮发现 4 项 major：JSON 引号触发遗漏、wave 标识符注入、escalation 工具能力表述、writer authority 未实际 gate；逐项修复并补测试。
+- [!] 一次带 gate 的同父模型 reviewer 因 `prompt_cache_retention` provider 兼容错误无输出；不带 gate 重试成功，记录为外部残余风险。
+- [x] 最终验证：15 项测试、4 个源文件 strip-types 语法检查、Pi auto-discovery `--list-models` 全通过。

@@ -1,32 +1,78 @@
 # Adaptive Subagent Router
 
-A global Pi extension that dynamically routes subagent work without embedding any provider or model ID.
+A global Pi extension that routes subagent work by **risk, quality policy, lane duty, evidence requirements, cost, context size, and writer isolation** without embedding any provider or model ID.
 
-## Policy
+## Routing policy
 
-- Reads the active parent provider/model/thinking level and the current runtime model catalogue for every parent turn.
-- Requires a concise routing decision before delegation: whether a child adds value, complexity, lane count/roles, and writer isolation.
-- Prefers an authenticated **same-provider** reasoning model whose published total cost is lower than the parent's and whose context window meets `minContextWindow`.
-- Selects a thinking level strictly below the parent's current level, respecting the candidate model's `thinkingLevelMap`.
-- If no routable lower-cost model exists, lowers the parent model's thinking level when possible; if it cannot be lowered, explicitly reuses the parent model at its current level.
-- Never crosses providers automatically or silently infers a different provider/model.
-- Limits lanes to 1 / 2 / 3 for simple / standard / complex work. Shared worktrees permit one writer; multiple writers require `worktree: true` on every writer.
+The router reads the active parent runtime and current model catalogue on every turn. It never crosses providers automatically.
 
-Cost is a conservative routing proxy, not a universal intelligence measurement. The provider model catalogue does not publish a provider-neutral capability rank. The fallback to the parent model is intentional when lower-cost routing is unavailable.
+### Quality policies
+
+- `balanced` (default):
+  - low-risk scout/research lanes may use a lower-cost same-provider reasoning model;
+  - medium-risk economical routes choose the closest lower-cost candidate rather than the cheapest;
+  - medium-risk reviewer/writer lanes and all high/critical lanes preserve the parent model and thinking level.
+- `economy`: preserves the original cost-first behavior: lower-cost model → parent model with lower thinking → parent runtime fallback.
+- `strict`: always preserves the parent model and current thinking level. Use for release, security, irreversible operations, or explicit quality gates.
+
+Cost remains a conservative proxy, not a provider-neutral intelligence score.
+
+### Role, evidence, and escalation
+
+Each lane declares `role` (`read|write`) and may declare `duty` (`scout|reviewer|worker|research`) plus a lane-specific `risk`.
+
+- Every child receives a quality contract requiring confidence and `needsEscalation` reporting.
+- Blockers must be backed by gate/command evidence or an exact reproducible code path; otherwise they must be labelled unverified.
+- Critical reviewer lanes require a host `gate` command.
+- `autoEscalate` defaults on for high/critical work. Reports containing low confidence or `needsEscalation: true` are rechecked using the parent runtime with a bounded turn budget while retaining repository verification tools.
+- `calibrationSample: true` repeats the first **read-only** lane on the parent runtime for explicit A/B quality comparison.
+
+### Isolation
+
+- Limits lanes to 1 / 2 / 3 for simple / standard / complex work.
+- Shared worktrees permit one writer.
+- Every writer declares one or more relative file/directory `authority` prefixes.
+- The router appends a Git-based host gate that rejects tracked or untracked changes outside those prefixes; a supplied lane gate is composed before this authority gate.
+- Multiple writers require `worktree:true`; resolved authority prefixes are rejected when equal or nested, reducing merge-conflict risk.
+- Lane keys and explicit output paths must be unique.
+- `cwd` defaults to the parent working directory and `output` defaults to `false` to prevent role-default output collisions.
 
 ## Use
 
-The extension injects the policy into the parent prompt and blocks direct execution calls to `subagent`. The parent should call `adaptive_subagent_launch` after it has made a concise routing decision.
+The extension blocks direct execution calls to `subagent`. Call `adaptive_subagent_launch` after stating a concise routing decision.
 
-Required parameters:
+Top-level parameters:
 
-- `decision`: concise non-chain-of-thought routing summary
-- `complexity`: `simple`, `standard`, or `complex`
-- `lanes`: narrow lane contracts with role `read` or `write`; use `wave` to serialize dependent stages
-- lane `cwd`: optional; defaults to the parent working directory
-- lane `output`: optional unique artifact path; defaults to `false` so parallel agents with role-default output names cannot collide
+- `decision`: concise summary of delegation value, risk/quality choice, lane count, evidence plan, and isolation
+- `complexity`: `simple | standard | complex`
+- `risk`: `low | medium | high | critical` (default `medium`)
+- `qualityPolicy`: `economy | balanced | strict` (default `balanced`)
+- `minContextWindow`: optional minimum child context window
+- `autoEscalate`: optional override; defaults on for high/critical lanes
+- `calibrationSample`: optional read-only parent-model A/B sample
+- `lanes`: one to three narrow lane contracts
 
-The tool builds the workflow and launches it through the official `pi-subagents` extension RPC. The resulting child model string is generated at runtime as `provider/model:thinking`.
+Lane parameters:
+
+- required: `key`, `agent`, `task`, `role`
+- optional for readers: `duty`, `risk`, `gate`, `wave` (1–99), `context`, `worktree`, `cwd`, `output`
+- required for writers: non-empty `authority` file/directory prefixes
+
+The tool returns a structured explanation for every lane: selected model/thinking, strategy, risk, duty, quality policy, eligible lower-cost count, and routing reasons.
+
+## Verification
+
+```bash
+node --experimental-strip-types --test routing.test.ts workflow.test.ts validation.test.ts
+node --experimental-strip-types --check index.ts routing.ts workflow.ts validation.ts
+pi --list-models
+```
+
+End-to-end checks should use a new Pi process so it loads the changed extension. Verify at least:
+
+1. high-risk balanced reviewer + gate → parent runtime;
+2. low-risk economy scout → lower-cost route;
+3. low-confidence child + `autoEscalate:true` → parent-runtime escalation run.
 
 ## Reload
 

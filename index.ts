@@ -1,156 +1,31 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import {
+	costScore,
+	lowerCostCandidates,
+	modelRef,
+	selectRoute,
+	type Complexity,
+	type LaneDuty,
+	type QualityPolicy,
+	type Risk,
+	type RuntimeModel,
+	type ThinkingLevel,
+} from "./routing.ts";
+import { validateLaneIsolation } from "./validation.ts";
+import { buildWorkflow } from "./workflow.ts";
 
-type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
-type Complexity = "simple" | "standard" | "complex";
-type LaneRole = "read" | "write";
-type RouteStrategy = "lower-cost" | "same-model-lower-thinking" | "same-model";
-
-type RuntimeModel = {
-	id: string;
-	provider: string;
-	reasoning: boolean;
-	input: string[];
-	contextWindow: number;
-	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
-	thinkingLevelMap?: Partial<Record<ThinkingLevel, string | null>>;
-};
-
-const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-const COMPLEXITY_TARGET: Record<Complexity, ThinkingLevel> = {
-	simple: "minimal",
-	standard: "low",
-	complex: "medium",
-};
 const LANE_LIMIT: Record<Complexity, number> = { simple: 1, standard: 2, complex: 3 };
 const RPC_PROTOCOL_VERSION = 1;
 const RPC_REQUEST_EVENT = "subagents:rpc:v1:request";
 const RPC_REPLY_PREFIX = "subagents:rpc:v1:reply:";
 
-function thinkingRank(level: ThinkingLevel): number {
-	return THINKING_LEVELS.indexOf(level);
-}
-
-function costScore(model: RuntimeModel): number {
-	const { input, output, cacheRead, cacheWrite } = model.cost;
-	return input + output + cacheRead + cacheWrite;
-}
-
-function supportsThinking(model: RuntimeModel, level: ThinkingLevel): boolean {
-	if (level === "off") return true;
-	if (!model.reasoning) return false;
-	const configured = model.thinkingLevelMap?.[level];
-	if (configured === null) return false;
-	// Pi's default mapping supports levels through high when the map omits them.
-	return thinkingRank(level) <= thinkingRank("high");
-}
-
-function selectThinking(model: RuntimeModel, parentThinking: ThinkingLevel, complexity: Complexity): ThinkingLevel | undefined {
-	const parentRank = thinkingRank(parentThinking);
-	if (parentRank <= 0) return undefined;
-	const desiredRank = Math.min(thinkingRank(COMPLEXITY_TARGET[complexity]), parentRank - 1);
-	for (let rank = desiredRank; rank >= 0; rank -= 1) {
-		const level = THINKING_LEVELS[rank]!;
-		if (supportsThinking(model, level)) return level;
-	}
-	return undefined;
-}
-
-type SelectedRoute = {
-	model: RuntimeModel;
-	thinking: ThinkingLevel;
-	strategy: RouteStrategy;
-};
-
-function selectRoute(
-	parent: RuntimeModel,
-	models: RuntimeModel[],
-	minContextWindow: number,
-	parentThinking: ThinkingLevel,
-	complexity: Complexity,
-): SelectedRoute | undefined {
-	const parentRank = thinkingRank(parentThinking);
-	if (parentRank < 0) return undefined;
-
-	for (const candidate of lowerCostCandidates(parent, models, minContextWindow)) {
-		const thinking = selectThinking(candidate, parentThinking, complexity);
-		if (thinking && thinkingRank(thinking) < parentRank) {
-			return { model: candidate, thinking, strategy: "lower-cost" };
-		}
-	}
-
-	if (parent.contextWindow < minContextWindow) return undefined;
-	const fallbackThinking = selectThinking(parent, parentThinking, complexity);
-	if (fallbackThinking && thinkingRank(fallbackThinking) < parentRank) {
-		return { model: parent, thinking: fallbackThinking, strategy: "same-model-lower-thinking" };
-	}
-
-	return { model: parent, thinking: parentThinking, strategy: "same-model" };
-}
-
-function lowerCostCandidates(parent: RuntimeModel, models: RuntimeModel[], minContextWindow: number): RuntimeModel[] {
-	const parentCost = costScore(parent);
-	if (!Number.isFinite(parentCost) || parentCost <= 0) return [];
-	return models
-		.filter((model) =>
-			model.provider === parent.provider
-			&& model.id !== parent.id
-			&& model.reasoning
-			&& model.input.includes("text")
-			&& model.contextWindow >= minContextWindow
-			&& Number.isFinite(costScore(model))
-			&& costScore(model) > 0
-			&& costScore(model) < parentCost,
-		)
-		.sort((left, right) => costScore(left) - costScore(right) || right.contextWindow - left.contextWindow || left.id.localeCompare(right.id));
-}
-
-function modelRef(model: RuntimeModel, thinking: ThinkingLevel): string {
-	return `${model.provider}/${model.id}:${thinking}`;
-}
-
-function candidateSummary(parent: RuntimeModel, models: RuntimeModel[], parentThinking: ThinkingLevel): string {
+function candidateSummary(parent: RuntimeModel, models: RuntimeModel[]): string {
 	const candidates = lowerCostCandidates(parent, models, 0)
-		.map((candidate) => {
-			const thinking = selectThinking(candidate, parentThinking, "complex");
-			return thinking ? `${modelRef(candidate, thinking)} (cost=${costScore(candidate).toFixed(3)})` : undefined;
-		})
-		.filter((value): value is string => value !== undefined)
-		.slice(0, 8);
+		.slice(0, 8)
+		.map((candidate) => `${candidate.provider}/${candidate.id} (cost=${costScore(candidate).toFixed(3)})`);
 	return candidates.length ? candidates.join(", ") : "none";
-}
-
-function escapeForScript(value: unknown): string {
-	return JSON.stringify(value).replace(/</g, "\\u003c");
-}
-
-function buildWorkflow(lanes: Array<Record<string, unknown>>, routes: Array<{ model: string }>, defaultCwd: string): string {
-	const waves = new Map<number, Array<Record<string, unknown>>>();
-	lanes.forEach((lane, index) => {
-		const wave = typeof lane.wave === "number" ? lane.wave : 1;
-		const item = {
-			key: lane.key,
-			agent: lane.agent,
-			task: lane.task,
-			model: routes[index]!.model,
-			context: lane.context,
-			worktree: lane.worktree,
-			cwd: lane.cwd ?? defaultCwd,
-			output: lane.output ?? false,
-		};
-		const current = waves.get(wave) ?? [];
-		current.push(item);
-		waves.set(wave, current);
-	});
-
-	const lines = ["const results = [];"];
-	for (const [wave, items] of [...waves.entries()].sort(([left], [right]) => left - right)) {
-		lines.push(`const wave${wave} = await runs.all(${escapeForScript(items)});`);
-		lines.push(`results.push(...wave${wave});`);
-	}
-	lines.push("return results.map((result) => result.output);");
-	return lines.join("\n");
 }
 
 async function rpcSpawn(pi: ExtensionAPI, params: Record<string, unknown>): Promise<unknown> {
@@ -182,21 +57,33 @@ const laneSchema = Type.Object({
 	agent: Type.String({ minLength: 1, description: "Subagent role, for example scout, reviewer, or worker." }),
 	task: Type.String({ minLength: 1, description: "Narrow task contract for this lane." }),
 	role: Type.String({ enum: ["read", "write"], description: "Whether this lane may modify project files." }),
-	wave: Type.Optional(Type.Integer({ minimum: 1, description: "Waves run serially; lanes in one wave run in parallel." })),
+	duty: Type.Optional(Type.String({ enum: ["scout", "reviewer", "worker", "research"], description: "Routing duty. Defaults from the agent name and role." })),
+	risk: Type.Optional(Type.String({ enum: ["low", "medium", "high", "critical"], description: "Lane-specific risk override." })),
+	gate: Type.Optional(Type.String({ minLength: 1, description: "Host verification command. Required for critical reviewer lanes." })),
+	authority: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1, description: "Writer-owned file/directory prefixes. Required for write lanes and checked for overlap." })),
+	wave: Type.Optional(Type.Integer({ minimum: 1, maximum: 99, description: "Waves 1-99 run serially; lanes in one wave run in parallel." })),
 	context: Type.Optional(Type.String({ enum: ["fresh", "fork"] })),
 	worktree: Type.Optional(Type.Boolean({ description: "Required for concurrent writers in isolated Git worktrees." })),
 	cwd: Type.Optional(Type.String({ minLength: 1, description: "Lane working directory; defaults to the parent cwd." })),
 	output: Type.Optional(Type.Unsafe({ anyOf: [{ type: "string", minLength: 1 }, { type: "boolean", enum: [false] }], description: "Unique output path, or false. Defaults to false to prevent role-default path collisions." })),
 });
 
+function inferDuty(agent: string, role: "read" | "write", explicit?: LaneDuty): LaneDuty {
+	if (explicit) return explicit;
+	const normalized = agent.toLowerCase();
+	if (normalized.includes("review")) return "reviewer";
+	if (normalized.includes("scout")) return "scout";
+	return role === "write" ? "worker" : "research";
+}
+
 export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
 	pi.on("before_agent_start", (event, ctx) => {
 		const parent = ctx.model as RuntimeModel;
 		const thinking = ctx.thinkingLevel as ThinkingLevel;
 		if (!parent || !thinking) return;
-		const candidates = candidateSummary(parent, ctx.modelRegistry.getAvailable() as RuntimeModel[], thinking);
+		const candidates = candidateSummary(parent, ctx.modelRegistry.getAvailable() as RuntimeModel[]);
 		return {
-			systemPrompt: `${event.systemPrompt}\n\n## Adaptive subagent routing (enforced)\nBefore delegating, make a short routing decision: whether a child adds independent value; task complexity; lane count/roles; and whether writes can be isolated. Do not reveal private chain-of-thought—state only the concise decision.\n\nParent runtime: ${parent.provider}/${parent.id}:${thinking}. Eligible same-provider lower-cost candidates at this moment: ${candidates}. Prefer a same-provider reasoning model whose cost metadata is lower than the parent and use a thinking level strictly below ${thinking}. If no eligible lower-cost model exists, use the parent model with a lower supported thinking level when possible; if it cannot be lowered, reuse the parent model at the current thinking level. Do not cross providers automatically.\n\nFor execution, call the adaptive_subagent_launch tool, not subagent directly. Give it lanes only after the routing decision. Keep one writer per shared worktree; multiple writers require worktree:true and non-overlapping work.`
+			systemPrompt: `${event.systemPrompt}\n\n## Adaptive subagent routing (enforced)\nBefore delegating, state a concise decision covering independent value, complexity, risk, quality policy, lane roles, evidence/gates, and writer isolation. Do not reveal private chain-of-thought.\n\nParent runtime: ${parent.provider}/${parent.id}:${thinking}. Same-provider lower-cost candidates: ${candidates}. Default to qualityPolicy=balanced: economical routing for low-risk scouting, but preserve the parent runtime for high/critical risk and medium-risk reviewer/writer lanes. Use economy only when cost is the explicit priority; use strict for release, security, irreversible, or user-designated quality gates. Never cross providers automatically.\n\nReviewer findings must distinguish verified evidence from static suspicion. Critical reviewer lanes require a gate command. For execution, call adaptive_subagent_launch, not subagent directly. Keep one writer per shared worktree; multiple writers require worktree:true, unique outputs, and non-overlapping authority.`
 		};
 	});
 
@@ -213,10 +100,14 @@ export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "adaptive_subagent_launch",
 		label: "Adaptive Subagent Launch",
-		description: "Launch a dynamically routed subagent workflow. Prefers a same-provider lower-cost model, then lowers the parent thinking level, then reuses the parent model when necessary. Use only after deciding task complexity and lanes.",
+		description: "Launch a risk-aware dynamically routed workflow. Balances task complexity, risk, lane duty, evidence gates, quality policy, cost, and writer isolation.",
 		parameters: Type.Object({
-			decision: Type.String({ minLength: 1, description: "Concise routing decision: why delegation, complexity, lane count, and writer-isolation conclusion." }),
+			decision: Type.String({ minLength: 12, description: "Concise routing decision covering delegation value, risk/quality choice, lane count, evidence plan, and writer isolation." }),
 			complexity: Type.String({ enum: ["simple", "standard", "complex"] }),
+			risk: Type.Optional(Type.String({ enum: ["low", "medium", "high", "critical"], description: "Overall task risk; defaults to medium." })),
+			qualityPolicy: Type.Optional(Type.String({ enum: ["economy", "balanced", "strict"], description: "economy favors cost, balanced is risk-aware default, strict preserves the parent runtime." })),
+			calibrationSample: Type.Optional(Type.Boolean({ description: "Run the first read lane again on the parent runtime for explicit A/B quality calibration." })),
+			autoEscalate: Type.Optional(Type.Boolean({ description: "Escalate low-confidence/needsEscalation reports to the parent runtime. Defaults on for high/critical risk." })),
 			minContextWindow: Type.Optional(Type.Integer({ minimum: 0, description: "Minimum context window required by every child; defaults to 0." })),
 			lanes: Type.Array(laneSchema, { minItems: 1, maxItems: 3, description: "One to three narrow lanes. Lanes sharing a wave run in parallel." }),
 		}),
@@ -227,29 +118,65 @@ export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
 			if (params.lanes.length > LANE_LIMIT[params.complexity]) {
 				throw new Error(`${params.complexity} work permits at most ${LANE_LIMIT[params.complexity]} lane(s); split the work into serial phases instead.`);
 			}
-			const writerLanes = params.lanes.filter((lane) => lane.role === "write");
-			if (writerLanes.length > 1 && writerLanes.some((lane) => lane.worktree !== true)) {
-				throw new Error("Multiple writer lanes require worktree:true for every writer and non-overlapping authority boundaries.");
-			}
-			const selectedRoute = selectRoute(
-				parent,
-				ctx.modelRegistry.getAvailable() as RuntimeModel[],
-				params.minContextWindow ?? 0,
-				parentThinking,
-				params.complexity,
+			validateLaneIsolation(params.lanes, ctx.cwd, params.calibrationSample ?? false);
+
+			const defaultRisk = (params.risk ?? "medium") as Risk;
+			const qualityPolicy = (params.qualityPolicy ?? "balanced") as QualityPolicy;
+			const models = ctx.modelRegistry.getAvailable() as RuntimeModel[];
+			const routes = params.lanes.map((lane) => {
+				const duty = inferDuty(lane.agent, lane.role, lane.duty as LaneDuty | undefined);
+				const risk = (lane.risk ?? defaultRisk) as Risk;
+				if (risk === "critical" && duty === "reviewer" && !lane.gate) {
+					throw new Error(`Critical reviewer lane "${lane.key}" requires a gate command.`);
+				}
+				const selected = selectRoute(parent, models, parentThinking, {
+					complexity: params.complexity as Complexity,
+					risk,
+					qualityPolicy,
+					role: lane.role,
+					duty,
+					minContextWindow: params.minContextWindow ?? 0,
+				});
+				if (!selected) {
+					throw new Error(`No route satisfies lane "${lane.key}" context requirements for ${parent.provider}/${parent.id}:${parentThinking}.`);
+				}
+				return {
+					key: lane.key,
+					model: modelRef(selected.model, selected.thinking),
+					strategy: selected.strategy,
+					risk,
+					duty,
+					qualityPolicy,
+					reason: selected.reason,
+					eligibleLowerCost: selected.eligibleLowerCost,
+				};
+			});
+			const normalizedLanes = params.lanes.map((lane, index) => ({ ...lane, risk: routes[index]!.risk }));
+			const autoEscalate = params.autoEscalate ?? routes.some((route) => route.risk === "high" || route.risk === "critical");
+			const workflowScript = buildWorkflow(
+				normalizedLanes as Array<Record<string, unknown>>,
+				routes,
+				ctx.cwd,
+				{
+					escalation: { enabled: autoEscalate, model: modelRef(parent, parentThinking) },
+					calibration: { enabled: params.calibrationSample ?? false, model: modelRef(parent, parentThinking) },
+				},
 			);
-			if (!selectedRoute) {
-				throw new Error(`No routable same-provider or parent-model fallback is available for ${parent.provider}/${parent.id}:${parentThinking}.`);
-			}
-			const route = {
-				model: modelRef(selectedRoute.model, selectedRoute.thinking),
-				strategy: selectedRoute.strategy,
-			};
-			const workflowScript = buildWorkflow(params.lanes as Array<Record<string, unknown>>, params.lanes.map(() => route), ctx.cwd);
 			const result = await rpcSpawn(pi, { workflowScript, async: true });
+			const summary = routes.map((route) => `${route.key}→${route.model} [${route.strategy}]`).join(", ");
 			return {
-				content: [{ type: "text", text: `Launched ${params.lanes.length} routed lane(s) with ${route.model}. Decision: ${params.decision}` }],
-				details: { decision: params.decision, parent: `${parent.provider}/${parent.id}:${parentThinking}`, route, lanes: params.lanes, result },
+				content: [{ type: "text", text: `Launched ${params.lanes.length} risk-aware lane(s): ${summary}. Decision: ${params.decision}` }],
+				details: {
+					decision: params.decision,
+					parent: `${parent.provider}/${parent.id}:${parentThinking}`,
+					qualityPolicy,
+					defaultRisk,
+					autoEscalate,
+					calibrationSample: params.calibrationSample ?? false,
+					routes,
+					lanes: params.lanes,
+					result,
+				},
 			};
 		},
 	});
