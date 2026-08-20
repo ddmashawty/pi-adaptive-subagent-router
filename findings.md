@@ -44,3 +44,12 @@
 - 调试记录：首次 benchmark 断言把非 economy reviewer 数量误写为 3，实际 fixture 当时只有 2；依据测试输出确认是断言/fixture 不一致，随后扩展 fixture 到四种 reviewer 风险并更新期望值。
 - 新 Pi 进程 live route smoke：low-risk `balanced` reviewer 实际路由到父 `openai-codex/gpt-5.6-luna:max`（`same-model`，reason 为 reviewer quality priority）；显式 `economy` reviewer 实际降到同模型 `:minimal`（`same-model-lower-thinking`）。这只证明路由选择，不证明质量或实际节省。
 - 一次要求 child 只返回固定 JSON 的 live smoke 与 pi-subagents acceptance-report 契约冲突，child 请求 supervisor 后 detached；后续 live harness 应让任务输出契约与 acceptance 契约一致。
+
+## 首轮完整路径 live A/B（2026-08-20）
+
+- 固定父模型 `openai-codex/gpt-5.6-luna:max`、complex/low、3 条并行只读 lane、无 calibration/escalation/gate；balanced 与 strict 使用相同任务文本。
+- Review suite：balanced/strict 都路由到 parent max，核心 rubric 各 3/3；balanced cost `$0.07712976`、144,320 child tokens、workflow 493.38s；strict cost `$0.07206960`、133,923 tokens、371.96s。因路由相同，差异不归因于 adaptive；balanced isolation 输出额外发现 HEAD/commit gate bypass。
+- Scout suite：balanced 路由到 parent medium，strict 到 parent max；两边核心 rubric 各 3/3。balanced cost `$0.01693624`、53,359 tokens、51.39s；strict cost `$0.02449144`、66,832 tokens、96.65s。首轮相对 strict 为 token -20.16%、cost -30.85%、workflow wall -46.83%。
+- 独立 quality scorer 读取 12 个 output/meta，确认所有 child `exitCode=0`、acceptance attested、无文件修改；结论为首轮质量通过，但样本不足以给出最终统计保证。
+- 新发现的安全残余：`workflow.ts:18` 使用当前 HEAD 而非 writer-start baseline，且 `--exclude-standard` 忽略 ignored untracked；需单独修复/验证，不能把当前 writer isolation 宣称为已完全验证。
+- 详细报告：`live-ab-report.md`。完整评测仍需至少 20 个 paired tasks/repetitions 和置信区间。

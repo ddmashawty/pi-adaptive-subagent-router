@@ -56,3 +56,6 @@
 - [x] 只读 reviewer 复核：无 blocker/major；修正 system prompt 文案遗漏和 reviewer 风险覆盖缺口；reviewer 无 shell 权限，最终 gate 由父会话执行。
 - [x] 新 Pi 进程 live route smoke：balanced low-risk reviewer 保留父 `max`，显式 economy reviewer 降为同模型 `minimal`；仅验证 route，不推断质量/实际成本。
 - [!] 一次固定 JSON live smoke 与 acceptance-report 契约冲突并 detached；已记录为后续 live A/B harness 的输出契约风险。
+- [x] 首轮完整路径 live A/B：review balanced/strict 各 3 个 reviewer tasks，scout balanced/strict 各 3 个 scout tasks；记录 route、child token/cost、workflow/child latency、artifact completion 和 rubric 质量。
+- [x] 首轮结果：scout balanced 路由 `max→medium`，相对 strict token -20.16%、cost -30.85%、workflow wall -46.83%，两边质量 rubric 均 3/3；review 两边均保留 `max`，质量 rubric 均 3/3，但 balanced isolation 发现 strict 漏掉的 HEAD/commit gate bypass。
+- [!] live review 暴露 writer authority 残余 blocker：当前 HEAD 基线与 ignored untracked 文件可能绕过 gate；详见 `live-ab-report.md`，不在本轮 read-only A/B 中修复。

@@ -15,7 +15,7 @@
 - [complete] 9. 调查并修复带 gate 的父模型 provider/cache 兼容性残余风险。
 - [complete] 10. 将 balanced reviewer 统一固定在父模型与当前思考级别，补充低风险 reviewer 回归。
 - [complete] 11. 增加可重复的 adaptive-vs-static 离线路由基准与结果判定工具，先验证策略差异再决定是否进行 live A/B。
-- [in_progress] 12. 已完成最小 live route smoke；完整 live A/B 仍需固定任务/seed/预算记录实际 token、成本、延迟、质量和安全事件，离线基准不得替代真实质量结论。
+- [in_progress] 12. 已完成首轮完整路径 live A/B（review/scout 各 3 个 paired tasks）；继续扩充到至少 20 个 paired tasks/repetitions，并记录实际 token、成本、延迟、质量和安全事件。
 
 ## 决策
 - 使用 `~/.pi/agent/extensions/adaptive-subagent-router/`，因此自动作用于所有项目。
