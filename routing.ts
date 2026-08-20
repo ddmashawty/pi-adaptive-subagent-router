@@ -2,8 +2,7 @@ export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhi
 export type Complexity = "simple" | "standard" | "complex";
 export type Risk = "low" | "medium" | "high" | "critical";
 export type QualityPolicy = "economy" | "balanced" | "strict";
-export type LaneRole = "read" | "write";
-export type LaneDuty = "scout" | "reviewer" | "worker" | "research";
+export type LaneDuty = "scout" | "reviewer" | "research";
 export type RouteStrategy = "lower-cost" | "same-model-lower-thinking" | "same-model";
 
 export type RuntimeModel = {
@@ -20,7 +19,6 @@ export type RouteRequest = {
 	complexity: Complexity;
 	risk: Risk;
 	qualityPolicy: QualityPolicy;
-	role: LaneRole;
 	duty: LaneDuty;
 	minContextWindow: number;
 };
@@ -91,7 +89,6 @@ function shouldPreserveParent(request: RouteRequest): string | undefined {
 	if (request.qualityPolicy === "economy") return undefined;
 	if (RISK_RANK[request.risk] >= RISK_RANK.high) return `${request.risk} risk`;
 	if (request.duty === "reviewer") return "reviewer quality priority";
-	if (request.risk === "medium" && request.role === "write") return "medium-risk writer";
 	return undefined;
 }
 

@@ -9,20 +9,6 @@ function escapeForScript(value: unknown): string {
 	return JSON.stringify(value).replace(/</g, "\\u003c");
 }
 
-export function buildAuthorityGate(authority: string[]): string {
-	const allowed = authority.map((entry) => entry.replace(/^\.\//, "").replace(/\/$/, ""));
-	const script = [
-		"const {execFileSync}=require('node:child_process');",
-		`const allowed=${JSON.stringify(allowed)};`,
-		"const run=(args)=>execFileSync('git',args,{encoding:'utf8'}).split(/\\r?\\n/).filter(Boolean);",
-		"const changed=[...new Set([...run(['diff','--name-only','HEAD']),...run(['ls-files','--others','--exclude-standard'])])];",
-		"const inside=(file,root)=>root==='.'||file===root||file.startsWith(root+'/');",
-		"const outside=changed.filter((file)=>!allowed.some((root)=>inside(file,root)));",
-		"if(outside.length){console.error('Writer authority violation: '+outside.join(', '));process.exit(1);}",
-	].join("");
-	return `node -e ${JSON.stringify(script)}`;
-}
-
 export function buildWorkflow(
 	lanes: WorkflowLane[],
 	routes: WorkflowRoute[],
@@ -33,31 +19,22 @@ export function buildWorkflow(
 	lanes.forEach((lane, index) => {
 		const wave = typeof lane.wave === "number" ? lane.wave : 1;
 		const risk = typeof lane.risk === "string" ? lane.risk : "inherited";
-		const authority = Array.isArray(lane.authority) ? lane.authority.join(", ") : "read-only";
 		const qualityContract = [
 			"Quality contract:",
 			`- Risk: ${risk}. Distinguish verified findings from static suspicions.`,
-			`- Write authority: ${authority}. Do not modify paths outside this boundary.`,
+			"- Read-only lane: do not modify project files; report findings with evidence, not edits.",
 			"- Report confidence (low/medium/high) and needsEscalation (true/false).",
 			"- A blocker requires command/gate evidence or an exact code path with a reproducible failure; otherwise label it unverified.",
 		].join("\n");
-		const authorityGate = lane.role === "write" && Array.isArray(lane.authority)
-			? buildAuthorityGate(lane.authority as string[])
-			: undefined;
-		const suppliedGate = typeof lane.gate === "string" ? lane.gate : undefined;
-		const gate = suppliedGate && authorityGate
-			? `(${suppliedGate}) && (${authorityGate})`
-			: suppliedGate ?? authorityGate;
 		const item = {
 			key: lane.key,
 			agent: lane.agent,
 			task: `${String(lane.task)}\n\n${qualityContract}`,
 			model: routes[index]!.model,
 			context: lane.context,
-			worktree: lane.worktree,
 			cwd: lane.cwd ?? defaultCwd,
 			output: lane.output ?? false,
-			gate,
+			...(typeof lane.gate === "string" ? { gate: lane.gate } : {}),
 		};
 		const current = waves.get(wave) ?? [];
 		current.push(item);

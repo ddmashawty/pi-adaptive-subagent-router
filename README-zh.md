@@ -2,13 +2,13 @@
 
 [English](README.md) | 中文
 
-Adaptive Subagent Router 是一个面向 [Pi](https://github.com/badlogic/pi-mono) 的全局扩展，用于根据任务风险、质量策略、lane 职责、模型成本、上下文要求、证据 gate 和 writer 隔离策略，动态路由 subagent 工作。
+Adaptive Subagent Router 是一个面向 [Pi](https://github.com/badlogic/pi-mono) 的全局扩展，用于根据任务风险、质量策略、lane 职责、模型成本、上下文要求和证据 gate，动态路由 subagent 工作。
 
 它保留父 agent 的决策权，同时增加运行时策略层：读取当前模型目录，选择合适的路由，校验委派约束，并记录实际执行效果。扩展不绑定具体 provider 或模型 ID，也不会自动跨 provider 路由。
 
 ## 开发者预览
 
-本扩展目前处于开发者预览阶段。随着真实使用数据积累，路由策略和日志格式可能继续变化。当前版本处于**只读灰度阶段**：writer authority 完成升级并通过独立验证前，所有 writer lane 都会 fail-closed。
+本扩展目前处于开发者预览阶段。随着真实使用数据积累，路由策略和日志格式可能继续变化。它只委派**只读** subagent（scout、reviewer、research）；所有文件写入由父 agent 自己完成，不由被委派的 lane 执行。
 
 ## 主要功能
 
@@ -20,7 +20,7 @@ Adaptive Subagent Router 是一个面向 [Pi](https://github.com/badlogic/pi-mon
 - 可选地由父运行时复核低置信度结果。
 - 可选地使用父运行时对第一个只读 lane 进行校准。
 - 支持最小上下文窗口要求。
-- 校验 lane key、输出路径唯一性和 writer authority。
+- 校验 lane key 和输出路径唯一性。
 - 对 child 请求提供 prompt-cache 兼容性保护。
 - 使用隐私安全的 JSONL 记录启动和完成效果。
 
@@ -31,7 +31,6 @@ Adaptive Subagent Router 是一个面向 [Pi](https://github.com/badlogic/pi-mon
 - 低风险 `scout` 和 `research` lane 可以使用同 provider 的低成本 reasoning 模型；
 - reviewer 保留父模型和当前思考级别；
 - high/critical 风险任务保留父运行时；
-- medium-risk writer 保留父运行时，但当前 writer 会被灰度保护直接拒绝；
 - medium-risk 经济路由优先选择较接近的低成本候选，而不是盲目选择最便宜的模型。
 
 ### `economy`
@@ -84,15 +83,14 @@ ln -sfn "$PWD/pi-adaptive-subagent-router" ~/.pi/agent/extensions/adaptive-subag
 - 为什么需要委派；
 - 任务复杂度和风险；
 - 质量策略；
-- lane 的 role 和 duty；
-- 证据和 gate 要求；
-- writer 的隔离与 authority 边界。
+- lane 的 duty；
+- 证据和 gate 要求。
 
 概念性调用：
 
 ```json
 {
-  "decision": "低风险只读侦察适合 balanced 路由；不启用 writer；要求文件证据和置信度。",
+  "decision": "低风险只读侦察适合 balanced 路由；要求文件证据和置信度。",
   "complexity": "standard",
   "risk": "low",
   "qualityPolicy": "balanced",
@@ -101,7 +99,6 @@ ln -sfn "$PWD/pi-adaptive-subagent-router" ~/.pi/agent/extensions/adaptive-subag
     {
       "key": "recon",
       "agent": "scout",
-      "role": "read",
       "duty": "scout",
       "task": "检查目标文件并返回带文件证据的具体发现。",
       "context": "fresh",
@@ -111,7 +108,7 @@ ln -sfn "$PWD/pi-adaptive-subagent-router" ~/.pi/agent/extensions/adaptive-subag
 }
 ```
 
-扩展会把每个 lane 转换为 `pi-subagents` workflow，并为每个子任务写入明确的模型和思考级别。底层直接调用 `subagent` 会被阻止，以避免绕过路由、证据和隔离检查。
+扩展会把每个 lane 转换为 `pi-subagents` workflow，并为每个子任务写入明确的模型和思考级别。底层直接调用 `subagent` 会被阻止，以避免绕过路由和证据检查。
 
 ## 使用日志
 
@@ -135,11 +132,9 @@ $PI_CODING_AGENT_DIR/adaptive-subagent-router/usage.jsonl
 
 ## 限制与安全说明
 
-### Writer 当前不可用
+### 设计上只读
 
-旧的 writer authority gate 只比较当前 `HEAD` 的变更，因此子 agent 如果在最终检查前提交越权文件，可能隐藏该变更；同时也遗漏 ignored untracked 文件。
-
-因此当前版本直接拒绝所有 `role: "write"` lane。只有在实现基于 writer-start baseline 的 authority gate 并完成独立验证后，才会重新考虑开放 writer。
+本扩展不委派文件写入。每个 lane 都是只读 subagent（scout、reviewer 或 research）：它只检查并报告，任何实际修改都由父 agent 自己完成。这从根本上消除了文件 authority 问题——没有 writer lane 需要约束，也就没有可被绕过的 authority 边界。
 
 ### 评测范围
 

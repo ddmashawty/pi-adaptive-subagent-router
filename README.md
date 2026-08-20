@@ -2,13 +2,13 @@
 
 English | [中文](README-zh.md)
 
-Adaptive Subagent Router is a global [Pi](https://github.com/badlogic/pi-mono) extension for routing subagent work by task risk, quality policy, lane duty, model cost, context requirements, evidence gates, and writer isolation.
+Adaptive Subagent Router is a global [Pi](https://github.com/badlogic/pi-mono) extension for routing subagent work by task risk, quality policy, lane duty, model cost, context requirements, and evidence gates.
 
 It keeps the parent agent in control while adding a runtime policy layer that reads the active model catalogue, selects an appropriate route, validates delegation constraints, and records observed execution effects. It does not hard-code a provider or model ID and never crosses providers automatically.
 
 ## Developer preview
 
-This extension is currently in developer preview. Routing policy and log formats may change as real usage provides more evidence. The current rollout is **read-only**: writer lanes fail closed until writer authority enforcement is upgraded and independently verified.
+This extension is currently in developer preview. Routing policy and log formats may change as real usage provides more evidence. It delegates **read-only** subagent work only (scout, reviewer, research); all file writes are performed by the parent agent, not by delegated lanes.
 
 ## Features
 
@@ -20,7 +20,7 @@ This extension is currently in developer preview. Routing policy and log formats
 - Optional parent-runtime escalation for low-confidence results.
 - Optional read-only calibration against the parent runtime.
 - Minimum context-window requirements for selected routes.
-- Lane key/output uniqueness and writer authority validation.
+- Lane key/output uniqueness validation.
 - Child-only prompt-cache compatibility protection.
 - Privacy-safe JSONL usage logging with launch and completion records.
 
@@ -31,7 +31,6 @@ This extension is currently in developer preview. Routing policy and log formats
 - Low-risk `scout` and `research` lanes may use a lower-cost same-provider reasoning model.
 - Reviewers preserve the parent model and current thinking level.
 - High- and critical-risk lanes preserve the parent runtime.
-- Medium-risk writers preserve the parent runtime, although writers are currently rejected by the rollout guard.
 - Medium-risk economical routing prefers a closer lower-cost candidate instead of blindly selecting the cheapest one.
 
 ### `economy`
@@ -84,15 +83,14 @@ The extension registers the `adaptive_subagent_launch` tool. Before delegating, 
 - why delegation is useful;
 - task complexity and risk;
 - quality policy;
-- lane roles and duties;
-- evidence and gate requirements;
-- writer isolation and authority boundaries.
+- lane duties;
+- evidence and gate requirements.
 
 A conceptual call looks like this:
 
 ```json
 {
-  "decision": "Low-risk read-only reconnaissance can use balanced routing; no writers; require file evidence and confidence.",
+  "decision": "Low-risk read-only reconnaissance can use balanced routing; require file evidence and confidence.",
   "complexity": "standard",
   "risk": "low",
   "qualityPolicy": "balanced",
@@ -101,7 +99,6 @@ A conceptual call looks like this:
     {
       "key": "recon",
       "agent": "scout",
-      "role": "read",
       "duty": "scout",
       "task": "Inspect the target files and report concrete findings with file evidence.",
       "context": "fresh",
@@ -111,7 +108,7 @@ A conceptual call looks like this:
 }
 ```
 
-The extension converts each lane into a `pi-subagents` workflow with an explicit model and thinking level. Direct execution calls to the underlying `subagent` tool are blocked so routing, evidence, and isolation checks cannot be bypassed.
+The extension converts each lane into a `pi-subagents` workflow with an explicit model and thinking level. Direct execution calls to the underlying `subagent` tool are blocked so routing and evidence checks cannot be bypassed.
 
 ## Usage logging
 
@@ -135,11 +132,9 @@ Logging failures are reported to stderr but never block routing.
 
 ## Limitations and safety
 
-### Writers are currently disabled
+### Read-only by design
 
-The previous writer authority gate compared changes against the current `HEAD`, allowing a child to hide an out-of-authority change by committing before the final check. It also missed ignored untracked files.
-
-The current release therefore rejects every `role: "write"` lane. Writers will be reconsidered only after a writer-start-baseline authority gate is implemented and independently verified.
+This extension does not delegate file writes. Every lane is a read-only subagent (scout, reviewer, or research): it inspects and reports, and the parent agent applies any changes itself. This removes the file-authority problem entirely — there is no writer lane to constrain, so there is no authority boundary to bypass.
 
 ### Evaluation scope
 

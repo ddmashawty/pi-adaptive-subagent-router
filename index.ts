@@ -13,7 +13,7 @@ import {
 	type RuntimeModel,
 	type ThinkingLevel,
 } from "./routing.ts";
-import { assertReadOnlyRollout, validateLaneIsolation } from "./validation.ts";
+import { validateLanes } from "./validation.ts";
 import { stripSubagentPromptCacheFields } from "./cacheCompatibility.ts";
 import { buildWorkflow } from "./workflow.ts";
 import { appendCompletionLog, appendUsageLog, launchedRun, pendingUsageRuns } from "./usageLog.ts";
@@ -56,26 +56,23 @@ async function rpcSpawn(pi: ExtensionAPI, params: Record<string, unknown>): Prom
 
 const laneSchema = Type.Object({
 	key: Type.String({ minLength: 1, description: "Stable lane key." }),
-	agent: Type.String({ minLength: 1, description: "Subagent role, for example scout, reviewer, or worker." }),
+	agent: Type.String({ minLength: 1, description: "Subagent role, for example scout, reviewer, or researcher." }),
 	task: Type.String({ minLength: 1, description: "Narrow task contract for this lane." }),
-	role: Type.String({ enum: ["read", "write"], description: "Whether this lane may modify project files." }),
-	duty: Type.Optional(Type.String({ enum: ["scout", "reviewer", "worker", "research"], description: "Routing duty. Defaults from the agent name and role." })),
+	duty: Type.Optional(Type.String({ enum: ["scout", "reviewer", "research"], description: "Routing duty. Defaults from the agent name." })),
 	risk: Type.Optional(Type.String({ enum: ["low", "medium", "high", "critical"], description: "Lane-specific risk override." })),
 	gate: Type.Optional(Type.String({ minLength: 1, description: "Host verification command. Required for critical reviewer lanes." })),
-	authority: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1, description: "Writer-owned file/directory prefixes. Required for write lanes and checked for overlap." })),
 	wave: Type.Optional(Type.Integer({ minimum: 1, maximum: 99, description: "Waves 1-99 run serially; lanes in one wave run in parallel." })),
 	context: Type.Optional(Type.String({ enum: ["fresh", "fork"] })),
-	worktree: Type.Optional(Type.Boolean({ description: "Required for concurrent writers in isolated Git worktrees." })),
 	cwd: Type.Optional(Type.String({ minLength: 1, description: "Lane working directory; defaults to the parent cwd." })),
-	output: Type.Optional(Type.Unsafe({ anyOf: [{ type: "string", minLength: 1 }, { type: "boolean", enum: [false] }], description: "Unique output path, or false. Defaults to false to prevent role-default path collisions." })),
+	output: Type.Optional(Type.Unsafe({ anyOf: [{ type: "string", minLength: 1 }, { type: "boolean", enum: [false] }], description: "Unique output path, or false. Defaults to false to prevent agent-default path collisions." })),
 });
 
-function inferDuty(agent: string, role: "read" | "write", explicit?: LaneDuty): LaneDuty {
+function inferDuty(agent: string, explicit?: LaneDuty): LaneDuty {
 	if (explicit) return explicit;
 	const normalized = agent.toLowerCase();
 	if (normalized.includes("review")) return "reviewer";
 	if (normalized.includes("scout")) return "scout";
-	return role === "write" ? "worker" : "research";
+	return "research";
 }
 
 export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
@@ -99,7 +96,7 @@ export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
 		if (!parent || !thinking) return;
 		const candidates = candidateSummary(parent, ctx.modelRegistry.getAvailable() as RuntimeModel[]);
 		return {
-			systemPrompt: `${event.systemPrompt}\n\n## Adaptive subagent routing (enforced)\nBefore delegating, state a concise decision covering independent value, complexity, risk, quality policy, lane roles, evidence/gates, and writer isolation. Do not reveal private chain-of-thought.\n\nParent runtime: ${parent.provider}/${parent.id}:${thinking}. Same-provider lower-cost candidates: ${candidates}. Default to qualityPolicy=balanced: economical routing is allowed for low-risk scout/research lanes, but every reviewer lane, high/critical risk lane, and medium-risk writer lane preserves the parent runtime. Use economy only when cost is the explicit priority; use strict for release, security, irreversible, or user-designated quality gates. Never cross providers automatically.\n\nReviewer findings must distinguish verified evidence from static suspicion. Critical reviewer lanes require a gate command. For execution, call adaptive_subagent_launch, not subagent directly. Keep one writer per shared worktree; multiple writers require worktree:true, unique outputs, and non-overlapping authority.`
+			systemPrompt: `${event.systemPrompt}\n\n## Adaptive subagent routing (enforced)\nBefore delegating, state a concise decision covering independent value, complexity, risk, quality policy, lane duties, and evidence/gates. Do not reveal private chain-of-thought.\n\nParent runtime: ${parent.provider}/${parent.id}:${thinking}. Same-provider lower-cost candidates: ${candidates}. Default to qualityPolicy=balanced: economical routing is allowed for low-risk scout/research lanes, but every reviewer lane and high/critical risk lane preserves the parent runtime. Use economy only when cost is the explicit priority; use strict for release, security, irreversible, or user-designated quality gates. Never cross providers automatically.\n\nReviewer findings must distinguish verified evidence from static suspicion. Critical reviewer lanes require a gate command. For execution, call adaptive_subagent_launch, not subagent directly.`
 		};
 	});
 
@@ -116,9 +113,9 @@ export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "adaptive_subagent_launch",
 		label: "Adaptive Subagent Launch",
-		description: "Launch a risk-aware dynamically routed workflow. Balances task complexity, risk, lane duty, evidence gates, quality policy, cost, and writer isolation.",
+		description: "Launch a risk-aware dynamically routed read-only workflow. Balances task complexity, risk, lane duty, evidence gates, quality policy, and cost.",
 		parameters: Type.Object({
-			decision: Type.String({ minLength: 12, description: "Concise routing decision covering delegation value, risk/quality choice, lane count, evidence plan, and writer isolation." }),
+			decision: Type.String({ minLength: 12, description: "Concise routing decision covering delegation value, risk/quality choice, lane count, and evidence plan." }),
 			complexity: Type.String({ enum: ["simple", "standard", "complex"] }),
 			risk: Type.Optional(Type.String({ enum: ["low", "medium", "high", "critical"], description: "Overall task risk; defaults to medium." })),
 			qualityPolicy: Type.Optional(Type.String({ enum: ["economy", "balanced", "strict"], description: "economy favors cost, balanced is risk-aware default, strict preserves the parent runtime." })),
@@ -134,14 +131,13 @@ export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
 			if (params.lanes.length > LANE_LIMIT[params.complexity]) {
 				throw new Error(`${params.complexity} work permits at most ${LANE_LIMIT[params.complexity]} lane(s); split the work into serial phases instead.`);
 			}
-			assertReadOnlyRollout(params.lanes);
-			validateLaneIsolation(params.lanes, ctx.cwd, params.calibrationSample ?? false);
+			validateLanes(params.lanes);
 
 			const defaultRisk = (params.risk ?? "medium") as Risk;
 			const qualityPolicy = (params.qualityPolicy ?? "balanced") as QualityPolicy;
 			const models = ctx.modelRegistry.getAvailable() as RuntimeModel[];
 			const routes = params.lanes.map((lane) => {
-				const duty = inferDuty(lane.agent, lane.role, lane.duty as LaneDuty | undefined);
+				const duty = inferDuty(lane.agent, lane.duty as LaneDuty | undefined);
 				const risk = (lane.risk ?? defaultRisk) as Risk;
 				if (risk === "critical" && duty === "reviewer" && !lane.gate) {
 					throw new Error(`Critical reviewer lane "${lane.key}" requires a gate command.`);
@@ -150,7 +146,6 @@ export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
 					complexity: params.complexity as Complexity,
 					risk,
 					qualityPolicy,
-					role: lane.role,
 					duty,
 					minContextWindow: params.minContextWindow ?? 0,
 				});
