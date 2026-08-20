@@ -1,30 +1,40 @@
-# Adaptive Router 当前计划：全局 Thinking 上限
+# Adaptive Router 当前唯一计划：Delegate 策略
 
-## 背景
-Oracle 已在 `1f138ee` 完成，Worker 已在 `34d78ae` 完成。当前只处理用户确认的新约束，不规划 Delegate。
+## 已完成
+- Oracle：`1f138ee`
+- Worker：`34d78ae`
+- 全局 subagent thinking ceiling：`eacce1b`
 
 ## 目标
-保留现有模型选择策略，但任何 subagent 的 thinking 不得高于父模型。Oracle 与 Worker 继续保留父模型，并改为严格继承父 thinking，不再自动提升到 `high`。
+为最后一个尚无专用策略的内置 agent `delegate` 增加 fail-closed adaptive 路由。Delegate 具有 bash/edit/write 权限，因此必须按写入 lane 隔离，而不能当作 research 或只读 lane。
 
 ## 成功标准
-- Oracle/Worker 在 economy、balanced、strict 下均使用父模型和父 thinking。
-- scout/reviewer/research 的经济路由仍可降低模型或 thinking，但绝不超过父 thinking。
-- 对所有 duty 和 policy 有统一 thinking ceiling 回归测试。
-- 系统提示、英中 README 与行为一致。
-- 单测、语法检查、真实 Pi smoke、独立 review 全部通过。
+- `agent: delegate` 自动且只能映射到 `delegate` duty，其他 agent 不能冒充。
+- Delegate 保留父模型和完全相同的父 thinking，默认 fork，绝不超过父 thinking。
+- Worker 与 Delegate 合计最多一个写入 lane。
+- Delegate 强制 `worktree:true`、非空 host gate，禁止 calibration。
+- Delegate 收到 managed-worktree 执行契约，不收到 read-only 指令。
+- Delegate 结果保留 `{ output, artifactPaths, runId }`；只读 lane API 不变。
+- 真实 Delegate 在 managed worktree 写入并通过 gate，父 checkout 不变，handoff/cleanup 完整。
+- Oracle、Worker 和既有只读路由无回归。
 
 ## 阶段
-- [complete] 1. 添加 thinking ceiling 失败测试
-- [complete] 2. 实现最小路由修改并同步文档
-- [complete] 3. 运行完整单测与静态检查
-- [complete] 4. 真实运行 Oracle/Worker 验证父 thinking 不被提升
-- [complete] 5. 独立 reviewer 审查并提交原子 commit
+- [complete] 1. 核对 Delegate agent、工具与 child-safety 契约
+- [complete] 2. 添加 routing/validation/workflow 失败测试
+- [complete] 3. 实现最小 Delegate duty 与隔离策略
+- [complete] 4. 运行完整单测和静态检查
+- [complete] 5. 真实 Delegate managed-worktree smoke
+- [complete] 6. 独立 reviewer 审查、修复所有 high blocker 并提交原子 commit
 
-## 遇到的错误
-- 首次双 lane smoke 使用 `complexity=simple`，被 lane limit 在 spawn 前拒绝；父 checkout 保持 clean。改为 `standard` 后通过。
+## Reviewer 后新增安全门槛
+- resolved agent 必须由 pi-subagents preflight 证明为 bundled builtin；同名 user/project/package shadow fail closed。
+- Delegate effective tools 必须保持显式、非 fanout 且不含工具扩展/MCP 扩张。
+- 底层 schedule/resume/refine 等 execution-capable action 不得绕过 adaptive tool。
 
 ## 范围约束
-- 不改变同 provider、成本和风险路由策略。
 - 不修改 pi-subagents。
-- 不实现 Delegate 或其他新 agent。
-- 不允许任何 subagent thinking 高于父 thinking。
+- 不允许 Delegate 在共享 checkout 或非 Git cwd 写入。
+- 不允许 Worker 与 Delegate 同时存在于一个 adaptive workflow。
+- 不自动应用 patch。
+- 不赋予 Delegate 嵌套 subagent 能力；遵循其内置工具 allowlist。
+- 保持同 provider 与全局 thinking ceiling。

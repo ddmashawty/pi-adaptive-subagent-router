@@ -1,47 +1,39 @@
-# Oracle 策略发现
+# Delegate 策略发现
 
-## 已知历史
-- Writer 曾实现，`69888a0` 因 authority gate 可绕过而 fail closed；`075e23e` 实现 baseline verifier；`1d4b8cf` 最终移除 writer lane。
-- 本阶段只处理 Oracle，不触碰 writer 历史代码。
+## 已核实契约
+- 内置 `delegate` 是轻量通用执行 agent，继承项目上下文，工具 allowlist 为 `read, grep, find, ls, bash, edit, write, contact_supervisor`。
+- Delegate 有实际写工具，不能归入 read-only research；仅靠提示词不是权限边界。
+- Delegate 的内置工具不含 `subagent`，因此不会获得 child-safe 嵌套 fanout；无需修改 pi-subagents。
+- Delegate frontmatter 未声明默认 fork，但描述强调接近父会话；adaptive 策略应显式默认 fork，同时允许调用方显式 fresh。
+- pi-subagents 的 managed worktree、gate、artifactPaths 与 cleanup 契约已由 Worker 阶段验证，可复用于 Delegate。
 
-## Oracle 已知契约
-- 本地 pi-subagents `agents/oracle.md`：只读咨询角色，默认 `thinking: high`、`defaultContext: fork`，工具为 read/grep/find/ls/bash。
-- 当前 adaptive `inferDuty()` 会把非 reviewer/scout 的 agent 当作 research，可能经济降级 Oracle。
-- 当前 duty 类型只有 scout/reviewer/research。
+## 初始策略决定
+- Delegate 与 Worker 均视为写入 lane，两者合计最多一个。
+- Delegate 始终保留父模型与父 thinking，满足全局 ceiling。
+- 强制 worktree、gate、禁 calibration，并返回 handoff artifact 引用。
 
-## 已核实
-- 当前主线不含测试文件；`backup/writer-authority-075e23e` 有 Node `node:test` 测试模式，可建立新的最小测试骨架。
-- 当前分支已从干净 HEAD `920adda` 创建为 `feature/oracle-routing`。
-- workflow 的 child `model` 是显式 `provider/id:thinking`，会覆盖 agent 默认模型/thinking，因此 Oracle 必须由 router 明确选出高质量 thinking，不能只依赖 `oracle.md` 的 `thinking: high`。
-- `workflow.ts` 可在未显式 context 时为 Oracle 注入 `fork`，显式 fresh/fork 仍应优先。
+## 真实验收
+- 新 Pi 父运行时 `openai-codex/gpt-5.6-sol:low`，`qualityPolicy=economy`，省略 duty/context 后自动得到 delegate duty、默认 fork，并保留同模型 `low`。
+- Delegate 在 managed worktree 创建 `delegate-output.txt`，host gate passed；handoff patch.changed=true（1 file/1 insertion）。
+- cleanup complete，临时 worktree/branch 均移除；父 fixture 不存在该文件且 Git clean。
+- 内置 Delegate 定义已静态确认不含 `subagent` 工具；真实 session 也未发生嵌套 spawn。
 
-## Oracle 策略决策
-- Oracle 在 economy/balanced/strict 下都保留父模型；其职责是决策一致性，不作为经济型 research。
-- Oracle 最初优先提升至 `high`；该策略现已被全局 thinking ceiling 取代，当前严格继承父 thinking。
-- `agent: oracle` 或别名 `advisor` 自动推断为 oracle duty；显式 duty 仍传入 workflow。
+## Reviewer Blocker 根因
+- pi-subagents 的 builtin 优先级最低，同名 user/project agent 会覆盖 `delegate`；仅按名称 allowlist 无法证明最终解析来源或有效工具。
+- pi-subagents 公开 preflight contract 可返回 resolved agent `source`、shadowed candidates、effectiveAllowlist 和 fanoutAuthorized，适合在 RPC spawn 前 fail closed。
+- 当前 `tool_call` hook 对所有 `action` 放行；但 `schedule.create/resume/run/run-due`、`resume` 和 `refine` 具有启动或恢复执行的效果，并非纯管理读取。
+- 根因不是 Delegate route 本身，而是 adaptive 层只验证声明名称、且把“action”误等同于“非执行管理”。
 
-## Oracle 最终验证
-- 真实启动两次均成功；最终验收省略 duty/context，自动推断 oracle duty 并默认 fork。
-- 父运行时 `gpt-5.6-sol:medium` 路由为同模型 `high`，未选择六个可用低成本候选。
-- child session header 含 `parentSession` 且输出 `ORACLE_FINAL_OK`、confidence high、needsEscalation false。
-- 独立 reviewer 的 calibration/fork 与旧角色回归测试缺口均已修复；12 项测试全绿。
-
-## Worker 契约核实
-- 不恢复旧路径级 authority；managed worktree 本身是完整写入边界。
-- pi-subagents 文档明确：`runs.run(..., worktree:true)` 会从 clean HEAD 创建 worktree，捕获 patch 和 handoff manifest，清理已捕获的临时 worktree/branch；child `artifactPaths` 为字符串数组。
-- `gate` 会规范化为 verified acceptance，且在 `worktree:true` 时运行于 child managed worktree。
-- workflow 应只为 Worker 返回 `{ output, artifactPaths, runId }`，保持既有只读 lane 返回字符串，避免 API 回归。
-- pi-subagents 公开契约足以实现单 managed-worktree Worker，不需要修改基础包。
-- 真实验收已证明：临时父 checkout 无 `worker-output.txt` 且 Git clean；handoff manifest 的 patch.changed=true、1 file/1 insertion，cleanup complete，worktree/branch 均移除。
-- host gate 在 worktree 内通过；handoff 与 patch 路径由父会话正常收到。
-- 独立 reviewer 发现任意 `writer`/自定义可写 agent 可被默认归为 research 的绕过；已改为完整 builtin allowlist 和 agent-duty 强绑定。
-- 负向独立 Pi 验收：`agent=writer,duty=research` 在 spawn 前返回 Unsupported adaptive agent；父 fixture checkout 无文件和 Git 状态变化。
-- Worker 最初优先提升至 high；该策略现已被全局 thinking ceiling 取代，当前严格继承父 thinking。
-
-## 全局 Thinking Ceiling
-- 用户确认保留现有经济模型路由，但所有 subagent thinking 不得高于父模型。
-- scout/reviewer/research 的既有路径已在路由算法中限制为低于或等于父 thinking；唯一越界路径是 Oracle/Worker 自动提升 high。
-- 新统一矩阵测试覆盖 5 种 duty × 3 种 quality policy，并验证 route thinking rank 不超过 medium 父级。
-- Oracle/Worker 现保留父模型和完全相同的父 thinking；低 thinking 父级有独立回归测试。
-- 新 Pi 进程以父 `gpt-5.6-sol:low` 同时运行 Oracle 与 Worker，两条 route 均为同模型 `low`；Worker gate 通过、patch captured、cleanup complete，父 fixture clean。
-- 独立 reviewer 无 blocker、confidence high；其 low note 指出经济路由测试只断言模型，已补充 lower-cost thinking=`low` 和 same-model-lower-thinking fallback 的精确回归断言。
+## Blocker 修复验证
+- 所有 lane 在 RPC spawn 前调用 pi-subagents 公开 launch-contract preflight，并要求 resolved source 为 `builtin`；Delegate 额外要求显式 allowlist、无 fanout、无 MCP/工具扩展、无 allowlist 扩张。
+- tool hook 现在阻止普通执行、任何携带 workflowScript 的 action，以及 `schedule.create/resume/run/run-due`、`resume`、`refine`；只读状态与非执行控制仍可用。
+- 同名 project `.pi/agents/delegate.md`（tools 含 subagent/write/bash）真实负向测试在 spawn 前返回 resolved source project，未创建目标文件，父 fixture clean。
+- `schedule.create` 真实负向测试被 tool hook 阻止，无 schedule artifact、无 BYPASS 文件。
+- 修复后 builtin Delegate 正向复验仍为父模型 `low`，gate/handoff 正常且父 checkout clean。
+- 第二次 reviewer 发现 `configuredExtensions` 未纳入 Delegate 工具契约；已先补失败测试，再要求该数组为空，覆盖 agent `extensions`/`subagentOnlyExtensions`。
+- 实测从 `/tmp` symlink 加载会因相对 preflight 路径失败；README 已移除 symlink 安装建议，明确要求直接 clone/copy 到 Pi 标准全局扩展目录。
+- 第三次 reviewer 发现 pi-subagents 会 trim action 而 hook 未 trim 的旁路；已按底层相同规范化顺序补空白变体测试并修复。
+- 真实 padded `" schedule.create "` 负向验收被阻止，无 schedule artifact 或文件副作用。
+- 第四次 reviewer 发现 direct `steer` 默认 recovery 可 pause-and-resume replacement；现只允许显式 `steeringRecovery:false`。
+- execution action 策略已从易漏项 blacklist 改为完整非执行 allowlist；`project.open` 和未知未来 action 也默认阻止。
+- 最终 acceptance reviewer 对照完整 pi-subagents action 表确认 allowlist 中无明确启动/恢复模型的 action；preflight/tool 契约闭合，无 blocker，needsEscalation false。

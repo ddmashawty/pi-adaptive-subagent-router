@@ -20,13 +20,17 @@ export function buildWorkflow(
 		const wave = typeof lane.wave === "number" ? lane.wave : 1;
 		const risk = typeof lane.risk === "string" ? lane.risk : "inherited";
 		const isWorker = lane.duty === "worker";
+		const isDelegate = lane.duty === "delegate";
+		const isWritingLane = isWorker || isDelegate;
 		const qualityContract = [
 			"Quality contract:",
 			`- Risk: ${risk}. Distinguish verified findings from static suspicions.`,
 			isWorker
 				? "- Managed-worktree writer: implement only the requested scope inside the assigned worktree; do not modify the parent checkout or paths outside the worktree."
-				: "- Read-only lane: do not modify project files; report findings with evidence, not edits.",
-			isWorker
+				: isDelegate
+					? "- Managed-worktree delegate: execute only the bounded delegated task inside the assigned worktree; do not modify the parent checkout or paths outside the worktree."
+					: "- Read-only lane: do not modify project files; report findings with evidence, not edits.",
+			isWritingLane
 				? "- Report changed files, validation commands/results, residual risks, confidence (low/medium/high), and needsEscalation (true/false)."
 				: "- Report confidence (low/medium/high) and needsEscalation (true/false).",
 			"- A blocker requires command/gate evidence or an exact code path with a reproducible failure; otherwise label it unverified.",
@@ -36,8 +40,8 @@ export function buildWorkflow(
 			agent: lane.agent,
 			task: `${String(lane.task)}\n\n${qualityContract}`,
 			model: routes[index]!.model,
-			context: lane.context ?? (lane.duty === "oracle" || isWorker ? "fork" : undefined),
-			...(isWorker ? { worktree: true } : {}),
+			context: lane.context ?? (lane.duty === "oracle" || isWritingLane ? "fork" : undefined),
+			...(isWritingLane ? { worktree: true } : {}),
 			cwd: lane.cwd ?? defaultCwd,
 			output: lane.output ?? false,
 			...(typeof lane.gate === "string" ? { gate: lane.gate } : {}),
@@ -47,8 +51,8 @@ export function buildWorkflow(
 		waves.set(wave, current);
 	});
 
-	const workerKeys = lanes.filter((lane) => lane.duty === "worker").map((lane) => lane.key);
-	const lines = ["const results = [];", `const workerKeys = new Set(${escapeForScript(workerKeys)});`];
+	const writingLaneKeys = lanes.filter((lane) => lane.duty === "worker" || lane.duty === "delegate").map((lane) => lane.key);
+	const lines = ["const results = [];", `const writingLaneKeys = new Set(${escapeForScript(writingLaneKeys)});`];
 	let waveIndex = 0;
 	for (const [, items] of [...waves.entries()].sort(([left], [right]) => left - right)) {
 		waveIndex += 1;
@@ -75,6 +79,6 @@ export function buildWorkflow(
 		lines.push("  results.push(escalation);");
 		lines.push("}");
 	}
-	lines.push("return results.map((result) => workerKeys.has(String(result.key)) ? { output: result.output, artifactPaths: result.artifactPaths, runId: result.runId } : result.output);");
+	lines.push("return results.map((result) => writingLaneKeys.has(String(result.key)) ? { output: result.output, artifactPaths: result.artifactPaths, runId: result.runId } : result.output);");
 	return lines.join("\n");
 }

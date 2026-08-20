@@ -2,7 +2,7 @@ export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhi
 export type Complexity = "simple" | "standard" | "complex";
 export type Risk = "low" | "medium" | "high" | "critical";
 export type QualityPolicy = "economy" | "balanced" | "strict";
-export type LaneDuty = "scout" | "reviewer" | "oracle" | "worker" | "research";
+export type LaneDuty = "scout" | "reviewer" | "oracle" | "worker" | "delegate" | "research";
 export type RouteStrategy = "lower-cost" | "same-model-lower-thinking" | "same-model";
 
 export type RuntimeModel = {
@@ -66,8 +66,9 @@ export function inferDuty(agent: string, explicit?: LaneDuty): LaneDuty {
 	else if (normalized === "researcher" || normalized === "research") inferred = "research";
 	else if (normalized === "oracle" || normalized === "advisor") inferred = "oracle";
 	else if (["worker", "developer", "coder", "implementer", "develop"].includes(normalized)) inferred = "worker";
+	else if (normalized === "delegate") inferred = "delegate";
 	if (!inferred) {
-		throw new Error(`Unsupported adaptive agent "${agent}". Allowed agents: scout, reviewer, researcher, oracle/advisor, worker and worker aliases.`);
+		throw new Error(`Unsupported adaptive agent "${agent}". Allowed agents: scout, reviewer, researcher, oracle/advisor, worker and worker aliases, delegate.`);
 	}
 	if (explicit && explicit !== inferred) {
 		throw new Error(`Adaptive duty "${explicit}" does not match agent "${agent}" (expected "${inferred}").`);
@@ -120,16 +121,19 @@ export function selectRoute(
 	const parentRank = thinkingRank(parentThinking);
 	if (parentRank < 0) return undefined;
 	const candidates = lowerCostCandidates(parent, models, request.minContextWindow);
-	if (request.duty === "oracle" || request.duty === "worker") {
+	if (request.duty === "oracle" || request.duty === "worker" || request.duty === "delegate") {
 		if (parent.contextWindow < request.minContextWindow) return undefined;
-		const isOracle = request.duty === "oracle";
+		const roleReasons = request.duty === "oracle"
+			? ["oracle decision-consistency priority", "preserve parent model for inherited-context consultation"]
+			: request.duty === "worker"
+				? ["worker implementation safety priority", "preserve parent model for managed-worktree implementation"]
+				: ["delegate parent-continuity priority", "preserve parent model for isolated delegated execution"];
 		return {
 			model: parent,
 			thinking: parentThinking,
 			strategy: "same-model",
 			reason: [
-				isOracle ? "oracle decision-consistency priority" : "worker implementation safety priority",
-				isOracle ? "preserve parent model for inherited-context consultation" : "preserve parent model for managed-worktree implementation",
+				...roleReasons,
 				`preserve parent thinking ${parentThinking}; subagents never exceed the parent thinking level`,
 			],
 			eligibleLowerCost: candidates.length,

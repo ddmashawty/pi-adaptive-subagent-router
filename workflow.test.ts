@@ -90,6 +90,63 @@ test("worker uses managed worktree, write contract, fork, gate, and returns hand
 	}]);
 });
 
+test("delegate uses managed worktree, delegate contract, fork, gate, and returns handoff artifacts", async () => {
+	let captured: Record<string, unknown> | undefined;
+	const script = buildWorkflow([{
+		key: "delegate-task",
+		agent: "delegate",
+		duty: "delegate",
+		task: "Complete the bounded delegated task",
+		risk: "medium",
+		worktree: true,
+		gate: "test -f delegate-output.txt",
+		output: false,
+	}], [{ model: "provider/parent:low" }], "/tmp/project");
+	const result = await compile(script)({
+		all: async (items: Array<Record<string, unknown>>) => {
+			captured = items[0];
+			return [{
+				key: "delegate-task",
+				output: "delegated",
+				artifactPaths: ["/tmp/delegate-handoff.json"],
+				runId: "delegate-run",
+			}];
+		},
+	});
+	assert.equal(captured?.context, "fork");
+	assert.equal(captured?.worktree, true);
+	assert.equal(captured?.gate, "test -f delegate-output.txt");
+	assert.match(String(captured?.task), /managed-worktree delegate/i);
+	assert.doesNotMatch(String(captured?.task), /Read-only lane/);
+	assert.deepEqual(result, [{
+		output: "delegated",
+		artifactPaths: ["/tmp/delegate-handoff.json"],
+		runId: "delegate-run",
+	}]);
+});
+
+test("an explicit delegate context overrides the fork default", async () => {
+	let captured: Record<string, unknown> | undefined;
+	const script = buildWorkflow([{
+		key: "delegate-fresh",
+		agent: "delegate",
+		duty: "delegate",
+		task: "Complete the bounded delegated task",
+		risk: "medium",
+		context: "fresh",
+		worktree: true,
+		gate: "true",
+		output: false,
+	}], [{ model: "provider/parent:low" }], "/tmp/project");
+	await compile(script)({
+		all: async (items: Array<Record<string, unknown>>) => {
+			captured = items[0];
+			return [{ key: "delegate-fresh", output: "done" }];
+		},
+	});
+	assert.equal(captured?.context, "fresh");
+});
+
 test("oracle calibration uses the same default fork context", async () => {
 	let calibration: Record<string, unknown> | undefined;
 	const script = buildWorkflow([{

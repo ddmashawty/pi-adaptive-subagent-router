@@ -39,6 +39,13 @@ test("worker aliases infer worker duty and cannot bypass it", () => {
 	assert.throws(() => inferDuty("worker", "research"), /does not match agent/i);
 });
 
+test("delegate infers delegate duty and cannot bypass it", () => {
+	assert.equal(inferDuty("delegate"), "delegate");
+	assert.equal(inferDuty("delegate", "delegate"), "delegate");
+	assert.throws(() => inferDuty("scout", "delegate"), /does not match agent/i);
+	assert.throws(() => inferDuty("delegate", "research"), /does not match agent/i);
+});
+
 test("unsupported, custom, writer, and whitespace-padded agent names fail closed", () => {
 	for (const agent of ["writer", "custom-writer", "worker ", "code-analysis.scout"]) {
 		assert.throws(() => inferDuty(agent), /unsupported adaptive agent/i);
@@ -122,7 +129,7 @@ test("same-model economical fallback remains below parent thinking", () => {
 });
 
 test("no subagent route exceeds the parent thinking level", () => {
-	for (const duty of ["scout", "reviewer", "research", "oracle", "worker"] as const) {
+	for (const duty of ["scout", "reviewer", "research", "oracle", "worker", "delegate"] as const) {
 		for (const qualityPolicy of ["economy", "balanced", "strict"] as const) {
 			const route = selectRoute(parent, [parent, economy], "medium", {
 				complexity: "complex",
@@ -165,3 +172,19 @@ test("worker inherits a minimal parent thinking level without raising it", () =>
 	assert.equal(route?.thinking, "minimal");
 	assert.match(route?.reason.join(" ") ?? "", /preserve parent thinking minimal/i);
 });
+
+for (const qualityPolicy of ["economy", "balanced", "strict"] as const) {
+	test(`delegate preserves the parent model and thinking under ${qualityPolicy}`, () => {
+		const route = selectRoute(parent, [parent, economy], "low", {
+			complexity: "standard",
+			risk: "low",
+			qualityPolicy,
+			duty: "delegate",
+			minContextWindow: 0,
+		});
+		assert.equal(route?.model.id, "parent");
+		assert.equal(route?.thinking, "low");
+		assert.equal(route?.strategy, "same-model");
+		assert.match(route?.reason.join(" ") ?? "", /delegate/i);
+	});
+}
