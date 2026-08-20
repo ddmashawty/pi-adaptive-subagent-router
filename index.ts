@@ -16,6 +16,7 @@ import {
 import { assertReadOnlyRollout, validateLaneIsolation } from "./validation.ts";
 import { stripSubagentPromptCacheFields } from "./cacheCompatibility.ts";
 import { buildWorkflow } from "./workflow.ts";
+import { appendCompletionLog, appendUsageLog, launchedRun, pendingUsageRuns } from "./usageLog.ts";
 
 const LANE_LIMIT: Record<Complexity, number> = { simple: 1, standard: 2, complex: 3 };
 const RPC_PROTOCOL_VERSION = 1;
@@ -78,6 +79,16 @@ function inferDuty(agent: string, role: "read" | "write", explicit?: LaneDuty): 
 }
 
 export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
+	const trackedRuns = pendingUsageRuns();
+	pi.events.on("subagent:async-complete", (event: unknown) => {
+		if (!event || typeof event !== "object") return;
+		const runId = (event as { runId?: unknown }).runId;
+		if (typeof runId !== "string") return;
+		const asyncDir = trackedRuns.get(runId);
+		if (asyncDir === undefined && !trackedRuns.has(runId)) return;
+		trackedRuns.delete(runId);
+		void appendCompletionLog(runId, asyncDir, event);
+	});
 	pi.on("before_provider_request", (event) => {
 		if (process.env.PI_SUBAGENT_CHILD !== "1") return;
 		return stripSubagentPromptCacheFields(event.payload, true);
@@ -169,6 +180,19 @@ export default function adaptiveSubagentRouter(pi: ExtensionAPI) {
 				},
 			);
 			const result = await rpcSpawn(pi, { workflowScript, async: true });
+			const launched = launchedRun(result);
+			if (launched) trackedRuns.set(launched.runId, launched.asyncDir);
+			await appendUsageLog({
+				event: "launch",
+				runId: launched?.runId,
+				asyncDir: launched?.asyncDir,
+				parent: `${parent.provider}/${parent.id}:${parentThinking}`,
+				complexity: params.complexity,
+				qualityPolicy,
+				autoEscalate,
+				calibrationSample: params.calibrationSample ?? false,
+				routes,
+			});
 			const summary = routes.map((route) => `${route.key}→${route.model} [${route.strategy}]`).join(", ");
 			return {
 				content: [{ type: "text", text: `Launched ${params.lanes.length} risk-aware lane(s): ${summary}. Decision: ${params.decision}` }],
